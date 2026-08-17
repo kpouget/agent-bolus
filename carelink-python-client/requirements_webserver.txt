@@ -1,0 +1,6 @@
+flask
+requests
+curlify
+pyOpenSSL
+selenium
+seleniumwire
