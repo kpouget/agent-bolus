@@ -39,6 +39,7 @@ def writeJson(jsonobj, name):
       print("ERROR: failed to save %s (%s) " % (filename, str(e)))
       return False
    else:
+      print("JSON data saved to %s" % filename)
       return True
 
 
@@ -93,11 +94,12 @@ if client.init():
                try:
                   with open(csv_filename, "w") as f:
                      f.write(downloadedData)
+                  print(f"CSV data saved to {csv_filename}")
                   if verbose:
-                     print(f"CSV data saved to {csv_filename}")
+                     print(f"File size: {len(downloadedData)} characters")
                   continue  # Skip the JSON saving part
                except Exception as e:
-                  print("ERROR: failed to save CSV file (%s)" % str(e))
+                  print("ERROR: failed to save CSV file %s (%s)" % (csv_filename, str(e)))
                   break
          elif web:
             if verbose:
@@ -119,7 +121,6 @@ if client.init():
             if data or history is not None or web or csv:  # Auto-save for historical data, web data, and CSV
                if writeJson(downloadedData, filename_prefix):
                   if verbose:
-                     print("Data saved successfully")
                      if web:
                         print("Web interface data downloaded (may contain more history)")
                      elif history is not None:
