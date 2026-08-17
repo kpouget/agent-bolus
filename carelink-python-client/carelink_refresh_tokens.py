@@ -62,11 +62,28 @@ def refresh_tokens(filename='logindata.json', is_us_region=False):
         return False
 
     # Check required fields
-    required_fields = ["refresh_token", "client_id"]
-    for field in required_fields:
-        if field not in token_data or token_data[field] == "UNKNOWN":
-            print(f"❌ Missing or invalid {field}")
-            return False
+    missing_fields = []
+
+    if not token_data.get("refresh_token") or token_data["refresh_token"] == "UNKNOWN":
+        missing_fields.append("refresh_token")
+
+    if not token_data.get("client_id") or token_data["client_id"] == "UNKNOWN":
+        missing_fields.append("client_id")
+
+    if missing_fields:
+        print(f"❌ Missing or invalid fields: {', '.join(missing_fields)}")
+
+        if "refresh_token" in missing_fields:
+            print("\n💡 EXPLANATION:")
+            print("   The web interface method doesn't provide refresh_token")
+            print("   This is normal - web browsers don't expose refresh tokens for security")
+            print("\n🔄 SOLUTIONS:")
+            print("   1. Use your access_token until it expires (~50 minutes)")
+            print("   2. When expired, re-run: python3 carelink_js_extractor.py")
+            print("   3. Or use the standalone JavaScript console command again")
+            print("\n⏰ Check remaining time: python3 carelink_token_status.py")
+
+        return False
 
     print(f"📁 Token file: {filename}")
     print(f"🆔 Client ID: {token_data['client_id']}")

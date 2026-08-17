@@ -4,3 +4,4 @@ curlify
 pyOpenSSL
 selenium
 seleniumwire
+webdriver-manager

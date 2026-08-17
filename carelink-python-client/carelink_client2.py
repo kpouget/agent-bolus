@@ -216,7 +216,7 @@ class CareLinkClient(object):
    ###########################################################
    # Get periodic pump and sensor data
    ###########################################################
-   def _get_data(self, config, token_data, username, role, patientid):
+   def _get_data(self, config, token_data, username, role, patientid, start_date=None, end_date=None):
       log.info("_get_data()")
       url = config["baseUrlCumulus"] + "/display/message"
       headers = COMMON_HEADERS
@@ -229,19 +229,69 @@ class CareLinkClient(object):
          data["role"] = "carepartner"
          data["patientId"] = patientid
       else:
-         data["role"] = "patient"         
+         data["role"] = "patient"
+
+      # Add date range parameters if provided - try multiple formats
+      if start_date and end_date:
+         # Try different parameter names and date formats
+         data["startDate"] = start_date
+         data["endDate"] = end_date
+         data["from"] = start_date
+         data["to"] = end_date
+         data["beginDate"] = start_date
+         data["fromDate"] = start_date
+         data["toDate"] = end_date
+
+         # Also try ISO format with time
+         iso_start = start_date + "T00:00:00.000Z"
+         iso_end = end_date + "T23:59:59.999Z"
+         data["startDateTime"] = iso_start
+         data["endDateTime"] = iso_end
+
+         log.info("   requesting data from %s to %s" % (start_date, end_date))
+         log.info("   trying multiple date parameter formats")
+      else:
+         log.info("   requesting recent data (no date range)")
+
+      log.info("   POST data: %s" % json.dumps(data))
       #log.debug("url: %s" % url)
       #log.debug("headers: %s" % json.dumps(headers))
-      #log.debug("data: %s" % json.dumps(data))
-      
+
       self.__last_api_status = None
       resp = requests.post(url=url,headers=headers,data=json.dumps(data))
       self.__last_api_status = resp.status_code
-      log.debug("   status: %d" % resp.status_code)
+      log.info("   API response status: %d" % resp.status_code)
+
       try:
          my_data = resp.json()
-      except:
+
+         # Analyze response to see date range
+         if my_data and isinstance(my_data, dict):
+            # Look for data arrays that might contain timestamped entries
+            for key in ['sgs', 'markers', 'readings', 'events', 'data']:
+               if key in my_data and isinstance(my_data[key], list) and len(my_data[key]) > 0:
+                  log.info("   Found %d entries in '%s'" % (len(my_data[key]), key))
+
+                  # Try to find date range in the data
+                  dates = []
+                  for entry in my_data[key][:5]:  # Check first 5 entries
+                     if isinstance(entry, dict):
+                        for date_field in ['datetime', 'timestamp', 'date', 'time', 'sg_datetime']:
+                           if date_field in entry:
+                              dates.append(entry[date_field])
+                              break
+
+                  if dates:
+                     log.info("   Data dates sample: %s" % dates[:3])
+
+            # Check if response includes any date-related metadata
+            if 'lastSensorTSAsString' in my_data:
+               log.info("   Last sensor timestamp: %s" % my_data['lastSensorTSAsString'])
+
+      except Exception as e:
+         log.warning("   Could not parse response JSON: %s" % str(e))
          my_data = None
+
       return my_data
 
    ###########################################################
@@ -398,8 +448,8 @@ class CareLinkClient(object):
          patientId = None
       
       # Get data: first try
-      data = self._get_data(self.__config, 
-                            self.__tokenData, 
+      data = self._get_data(self.__config,
+                            self.__tokenData,
                             self.__username,
                             self.__user["role"],
                             patientId)
@@ -409,10 +459,10 @@ class CareLinkClient(object):
          self.__tokenData = self._do_refresh(self.__config, self.__tokenData)
          self.__accessTokenPayload = self._get_access_token_payload(self.__tokenData)
          self._write_token_file(self.__tokenData, self.__tokenFile)
-         
-         # Get data: second try 
-         data = self._get_data(self.__config, 
-                               self.__tokenData, 
+
+         # Get data: second try
+         data = self._get_data(self.__config,
+                               self.__tokenData,
                                self.__username,
                                self.__user["role"],
                                patientId)
@@ -420,6 +470,267 @@ class CareLinkClient(object):
          if self.__last_api_status in AUTH_ERROR_CODES:
             # Failed permanently
             log.error("ERROR: unable to get data")
+            return None
+      return data
+
+   ###########################################################
+   # Get data using web interface API (personalWebView)
+   ###########################################################
+   def _get_web_data(self, token_data):
+      """Get data using the web interface personalWebView endpoint"""
+      log.info("_get_web_data() - using personalWebView endpoint")
+      url = "https://clcloud.minimed.eu/connect/retina/v1/personalWebView"
+
+      headers = {
+         "Accept": "application/json, text/plain, */*",
+         "Accept-Language": "en-US,en;q=0.9",
+         "Accept-Encoding": "gzip, deflate, br, zstd",
+         "Authorization": "Bearer " + token_data["access_token"],
+         "Content-Type": "application/json; charset=utf-8",
+         "Origin": "https://carelink.minimed.eu",
+         "Referer": "https://carelink.minimed.eu/",
+         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:152.0) Gecko/20100101 Firefox/152.0",
+         "Connection": "keep-alive",
+         "Sec-Fetch-Dest": "empty",
+         "Sec-Fetch-Mode": "cors",
+         "Sec-Fetch-Site": "same-site",
+         "Pragma": "no-cache",
+         "Cache-Control": "no-cache"
+      }
+
+      self.__last_api_status = None
+      resp = requests.get(url=url, headers=headers)
+      self.__last_api_status = resp.status_code
+      log.info("   personalWebView API response status: %d" % resp.status_code)
+
+      try:
+         my_data = resp.json()
+
+         # Analyze response to see date range
+         if my_data and isinstance(my_data, dict):
+            # Look for data arrays that might contain timestamped entries
+            for key in ['sgs', 'markers', 'readings', 'events', 'data', 'sensorGlucose']:
+               if key in my_data and isinstance(my_data[key], list) and len(my_data[key]) > 0:
+                  log.info("   Found %d entries in '%s'" % (len(my_data[key]), key))
+
+                  # Try to find date range in the data
+                  dates = []
+                  for entry in my_data[key][:5]:  # Check first 5 entries
+                     if isinstance(entry, dict):
+                        for date_field in ['datetime', 'timestamp', 'date', 'time', 'sg_datetime']:
+                           if date_field in entry:
+                              dates.append(entry[date_field])
+                              break
+
+                  if dates:
+                     log.info("   Data dates sample: %s" % dates[:3])
+
+            # Check if response includes any date-related metadata
+            if 'lastSensorTSAsString' in my_data:
+               log.info("   Last sensor timestamp: %s" % my_data['lastSensorTSAsString'])
+
+      except Exception as e:
+         log.warning("   Could not parse personalWebView response JSON: %s" % str(e))
+         my_data = None
+
+      return my_data
+
+   ###########################################################
+   # Get historical data for a date range
+   ###########################################################
+   def getHistoricalData(self, days_back=7):
+      """
+      Get historical data for the specified number of days back from today
+
+      Args:
+         days_back (int): Number of days back from today to retrieve data (default: 7)
+
+      Returns:
+         dict: Historical data from the API, or None on error
+      """
+      # Check if access token is valid
+      if not self._is_token_valid(self.__accessTokenPayload):
+         self.__tokenData = self._do_refresh(self.__config, self.__tokenData)
+         self.__accessTokenPayload = self._get_access_token_payload(self.__tokenData)
+         self._write_token_file(self.__tokenData, self.__tokenFile)
+         if not self._is_token_valid(self.__accessTokenPayload):
+            log.error("ERROR: unable to get valid access token")
+            return None
+
+      if self.__patient is not None:
+         patientId = self.__patient["username"]
+      else:
+         patientId = None
+
+      # Calculate date range
+      end_date = datetime.now()
+      start_date = end_date - timedelta(days=days_back)
+
+      # Format dates for API (try common formats)
+      start_date_str = start_date.strftime("%Y-%m-%d")
+      end_date_str = end_date.strftime("%Y-%m-%d")
+
+      log.info("Getting historical data for %d days (%s to %s)" % (days_back, start_date_str, end_date_str))
+
+      # Get data: first try
+      data = self._get_data(self.__config,
+                            self.__tokenData,
+                            self.__username,
+                            self.__user["role"],
+                            patientId,
+                            start_date_str,
+                            end_date_str)
+      # Check API response
+      if self.__last_api_status in AUTH_ERROR_CODES:
+         # Try to refresh token
+         self.__tokenData = self._do_refresh(self.__config, self.__tokenData)
+         self.__accessTokenPayload = self._get_access_token_payload(self.__tokenData)
+         self._write_token_file(self.__tokenData, self.__tokenFile)
+
+         # Get data: second try
+         data = self._get_data(self.__config,
+                               self.__tokenData,
+                               self.__username,
+                               self.__user["role"],
+                               patientId,
+                               start_date_str,
+                               end_date_str)
+         # Check API response
+         if self.__last_api_status in AUTH_ERROR_CODES:
+            # Failed permanently
+            log.error("ERROR: unable to get historical data")
+            return None
+      return data
+
+   ###########################################################
+   # Download CSV report (historical data)
+   ###########################################################
+   def _download_csv_report(self, token_data, report_uuid):
+      """Download CSV report using the reportCsv endpoint"""
+      log.info("_download_csv_report() - downloading report UUID: %s" % report_uuid)
+      url = f"https://carelink.minimed.eu/patient/reports/reportCsv?uuid={report_uuid}&dMInFileName=false"
+
+      headers = {
+         "Authorization": "Bearer " + token_data["access_token"],
+         "Referer": "https://carelink.minimed.eu/app/reports",
+         "Cookie": f"auth_tmp_token={token_data['access_token']}"
+      }
+
+      self.__last_api_status = None
+      resp = requests.get(url=url, headers=headers)
+      self.__last_api_status = resp.status_code
+      log.info("   CSV report download status: %d" % resp.status_code)
+      log.info("   Content type: %s" % resp.headers.get('content-type', 'unknown'))
+      log.info("   Content length: %s bytes" % resp.headers.get('content-length', 'unknown'))
+
+      if resp.status_code == 200:
+         # Check if it's CSV content
+         content_type = resp.headers.get('content-type', '')
+         if 'csv' in content_type.lower() or 'text' in content_type.lower():
+            log.info("   Successfully downloaded CSV data")
+            return resp.text
+         else:
+            log.info("   Response might be JSON error or other format")
+            try:
+               # Try to parse as JSON to see if it's an error response
+               json_data = resp.json()
+               log.info("   JSON response: %s" % str(json_data)[:200])
+               return json_data
+            except:
+               log.info("   Raw response (first 200 chars): %s" % resp.text[:200])
+               return resp.text
+      else:
+         log.error("   Failed to download CSV report")
+         return None
+
+   ###########################################################
+   # Get data using web interface (more historical data)
+   ###########################################################
+   def getWebData(self):
+      """
+      Get data using the web interface personalWebView endpoint
+      This might return more historical data than the mobile API
+
+      Returns:
+         dict: Data from the web interface API, or None on error
+      """
+      # Check if access token is valid
+      if not self._is_token_valid(self.__accessTokenPayload):
+         self.__tokenData = self._do_refresh(self.__config, self.__tokenData)
+         self.__accessTokenPayload = self._get_access_token_payload(self.__tokenData)
+         self._write_token_file(self.__tokenData, self.__tokenFile)
+         if not self._is_token_valid(self.__accessTokenPayload):
+            log.error("ERROR: unable to get valid access token")
+            return None
+
+      log.info("Getting data from web interface (personalWebView)")
+
+      # Get data: first try
+      data = self._get_web_data(self.__tokenData)
+
+      # Check API response
+      if self.__last_api_status in AUTH_ERROR_CODES:
+         # Try to refresh token
+         self.__tokenData = self._do_refresh(self.__config, self.__tokenData)
+         self.__accessTokenPayload = self._get_access_token_payload(self.__tokenData)
+         self._write_token_file(self.__tokenData, self.__tokenFile)
+
+         # Get data: second try
+         data = self._get_web_data(self.__tokenData)
+
+         # Check API response
+         if self.__last_api_status in AUTH_ERROR_CODES:
+            # Failed permanently
+            log.error("ERROR: unable to get web interface data")
+            return None
+      return data
+
+   ###########################################################
+   # Download CSV report with historical data
+   ###########################################################
+   def getCsvReport(self, report_uuid=None):
+      """
+      Download CSV report containing historical data
+
+      Args:
+         report_uuid (str): UUID of the report to download. If None, uses a default UUID
+
+      Returns:
+         str: CSV data as text, or None on error
+      """
+      # Check if access token is valid
+      if not self._is_token_valid(self.__accessTokenPayload):
+         self.__tokenData = self._do_refresh(self.__config, self.__tokenData)
+         self.__accessTokenPayload = self._get_access_token_payload(self.__tokenData)
+         self._write_token_file(self.__tokenData, self.__tokenFile)
+         if not self._is_token_valid(self.__accessTokenPayload):
+            log.error("ERROR: unable to get valid access token")
+            return None
+
+      # Use provided UUID or default
+      if report_uuid is None:
+         # This is the UUID from the user's curl command - might be a standard report
+         report_uuid = "e4a07978-94a3-4049-8188-ad259e7f2ec7"
+
+      log.info("Downloading CSV report with UUID: %s" % report_uuid)
+
+      # Download CSV: first try
+      data = self._download_csv_report(self.__tokenData, report_uuid)
+
+      # Check API response
+      if self.__last_api_status in AUTH_ERROR_CODES:
+         # Try to refresh token
+         self.__tokenData = self._do_refresh(self.__config, self.__tokenData)
+         self.__accessTokenPayload = self._get_access_token_payload(self.__tokenData)
+         self._write_token_file(self.__tokenData, self.__tokenFile)
+
+         # Download CSV: second try
+         data = self._download_csv_report(self.__tokenData, report_uuid)
+
+         # Check API response
+         if self.__last_api_status in AUTH_ERROR_CODES:
+            # Failed permanently
+            log.error("ERROR: unable to download CSV report")
             return None
       return data
 

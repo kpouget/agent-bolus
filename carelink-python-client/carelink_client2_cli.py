@@ -42,23 +42,32 @@ def writeJson(jsonobj, name):
       return True
 
 
-# Parse command line 
+# Parse command line
 parser = argparse.ArgumentParser()
-parser.add_argument('--repeat',   '-r', type=int, help='Repeat request times', required=False)
-parser.add_argument('--wait',     '-w', type=int, help='Wait minutes between repeated calls', required=False)
-parser.add_argument('--data',     '-d', help='Save recent data', action='store_true')
-parser.add_argument('--verbose',  '-v', help='Verbose mode', action='store_true')
+parser.add_argument('--repeat',    '-r', type=int, help='Repeat request times', required=False)
+parser.add_argument('--wait',      '-w', type=int, help='Wait minutes between repeated calls', required=False)
+parser.add_argument('--data',      '-d', help='Save recent data', action='store_true')
+parser.add_argument('--history',   '-H', type=int, help='Download historical data for N days back (default: 7)', const=7, nargs='?')
+parser.add_argument('--web',       '-W', help='Use web interface API (may have more historical data)', action='store_true')
+parser.add_argument('--csv',       '-C', help='Download CSV report (historical data)', action='store_true')
+parser.add_argument('--verbose',   '-v', help='Verbose mode', action='store_true')
 args = parser.parse_args()
 
 # Get parameters from CLI
 repeat   = 1 if args.repeat == None else args.repeat
 wait     = 5 if args.wait == None else args.wait
 data     = args.data
+history  = args.history
+web      = args.web
+csv      = args.csv
 verbose  = args.verbose
 
 #print("repeat   = " + str(repeat))
 #print("wait     = " + str(wait))
 #print("data     = " + str(data))
+#print("history  = " + str(history))
+#print("web      = " + str(web))
+#print("csv      = " + str(csv))
 #print("verbose  = " + str(verbose))
 
 # Create client instance
@@ -72,13 +81,50 @@ if client.init():
       if verbose:
          print("Starting download, count: %d" % (i+1))
       try:
-         recentData = client.getRecentData()
-         if recentData != None and client.getLastResponseCode() == 200:
-            if(data):
-               if writeJson(recentData, "data"):
+         # Choose between CSV, web interface, historical data, or recent data
+         if csv:
+            if verbose:
+               print("Downloading CSV report (historical data)")
+            downloadedData = client.getCsvReport()
+            filename_prefix = "csv_report"
+            # For CSV, save as .csv file instead of JSON
+            if downloadedData and isinstance(downloadedData, str):
+               csv_filename = filename_prefix + "-" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv"
+               try:
+                  with open(csv_filename, "w") as f:
+                     f.write(downloadedData)
+                  if verbose:
+                     print(f"CSV data saved to {csv_filename}")
+                  continue  # Skip the JSON saving part
+               except Exception as e:
+                  print("ERROR: failed to save CSV file (%s)" % str(e))
+                  break
+         elif web:
+            if verbose:
+               print("Downloading data from web interface API")
+            downloadedData = client.getWebData()
+            filename_prefix = "webdata"
+         elif history is not None:
+            if verbose:
+               print("Downloading historical data for %d days" % history)
+            downloadedData = client.getHistoricalData(days_back=history)
+            filename_prefix = "history_%ddays" % history
+         else:
+            if verbose:
+               print("Downloading recent data")
+            downloadedData = client.getRecentData()
+            filename_prefix = "data"
+
+         if downloadedData != None and client.getLastResponseCode() == 200:
+            if data or history is not None or web or csv:  # Auto-save for historical data, web data, and CSV
+               if writeJson(downloadedData, filename_prefix):
                   if verbose:
                      print("Data saved successfully")
-         # Error occured
+                     if web:
+                        print("Web interface data downloaded (may contain more history)")
+                     elif history is not None:
+                        print("Historical data requested for %d days" % history)
+         # Error occurred
          else:
             print("ERROR: failed to get data (response code %d)" % client.getLastResponseCode())
             break
