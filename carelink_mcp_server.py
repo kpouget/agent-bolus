@@ -216,6 +216,104 @@ class CarelinkMcpServer:
                 "exception_type": type(e).__name__
             }
 
+    def get_web_data(self) -> Dict[str, Any]:
+        """Get summary JSON data from Carelink web interface (personalWebView endpoint)"""
+        try:
+            # Change to carelink-python-client directory where logindata.json is located
+            original_cwd = os.getcwd()
+            carelink_dir = os.path.join(os.path.dirname(__file__), "carelink-python-client")
+            os.chdir(carelink_dir)
+
+            try:
+                # Create client instance
+                client = carelink_client2.CareLinkClient()
+
+                # Initialize client
+                if not client.init():
+                    return {
+                        "success": False,
+                        "error": f"Failed to initialize Carelink client (response code {client.getLastResponseCode()})",
+                        "response_code": client.getLastResponseCode()
+                    }
+
+                # Get web interface data
+                web_data = client.getWebData()
+
+                if web_data is None:
+                    return {
+                        "success": False,
+                        "error": f"Failed to get web data (response code {client.getLastResponseCode()})",
+                        "response_code": client.getLastResponseCode()
+                    }
+
+                # Save JSON data to file for reference (relative to carelink dir)
+                data_dir = "data"
+                os.makedirs(data_dir, exist_ok=True)
+
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"web_data-{timestamp}.json"
+                filepath = os.path.join(data_dir, filename)
+
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    json.dump(web_data, f, indent=2)
+
+                # Get absolute path for return
+                abs_filepath = os.path.abspath(filepath)
+
+                # Analyze the data to provide summary info
+                summary_info = self._analyze_web_data(web_data)
+
+                return {
+                    "success": True,
+                    "file_path": abs_filepath,
+                    "filename": filename,
+                    "data": web_data,
+                    "timestamp": timestamp,
+                    "data_size": len(str(web_data)),
+                    "summary": summary_info
+                }
+
+            finally:
+                # Always change back to original directory
+                os.chdir(original_cwd)
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Exception getting web data: {str(e)}",
+                "exception_type": type(e).__name__
+            }
+
+    def _analyze_web_data(self, web_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze web data to provide summary information"""
+        summary = {
+            "data_keys": list(web_data.keys()) if isinstance(web_data, dict) else [],
+            "total_keys": len(web_data) if isinstance(web_data, dict) else 0
+        }
+
+        if isinstance(web_data, dict):
+            # Look for common data arrays and analyze them
+            for key in ['sgs', 'markers', 'readings', 'events', 'data', 'sensorGlucose']:
+                if key in web_data and isinstance(web_data[key], list):
+                    summary[f"{key}_count"] = len(web_data[key])
+                    if web_data[key]:  # If list is not empty
+                        # Try to find date range
+                        dates = []
+                        for entry in web_data[key][:5]:  # Check first 5 entries
+                            if isinstance(entry, dict):
+                                for date_field in ['datetime', 'timestamp', 'date', 'time']:
+                                    if date_field in entry:
+                                        dates.append(entry[date_field])
+                                        break
+                        if dates:
+                            summary[f"{key}_sample_dates"] = dates[:3]
+
+            # Check for metadata
+            if 'lastSensorTSAsString' in web_data:
+                summary['last_sensor_timestamp'] = web_data['lastSensorTSAsString']
+
+        return summary
+
 
 def handle_mcp_request(request: Dict[str, Any]) -> Dict[str, Any]:
     """Handle MCP protocol requests"""
@@ -257,6 +355,15 @@ def handle_mcp_request(request: Dict[str, Any]) -> Dict[str, Any]:
                     {
                         "name": "get_recent_data",
                         "description": "Get recent JSON data from Carelink mobile API (2-3 days)",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {},
+                            "required": []
+                        }
+                    },
+                    {
+                        "name": "get_web_data",
+                        "description": "Get summary JSON data from Carelink web interface (personalWebView endpoint) - may contain more historical data than mobile API",
                         "inputSchema": {
                             "type": "object",
                             "properties": {},
@@ -362,6 +469,52 @@ def handle_mcp_request(request: Dict[str, Any]) -> Dict[str, Any]:
                         ]
                     }
 
+            elif tool_name == "get_web_data":
+                result = server.get_web_data()
+
+                if result["success"]:
+                    summary = result.get('summary', {})
+                    data_preview = str(result.get('data', {}))[:200]
+
+                    # Build summary text
+                    summary_text = ""
+                    if summary.get('data_keys'):
+                        summary_text += f"📋 Data keys: {', '.join(summary['data_keys'][:5])}\n"
+
+                    for key in ['sgs', 'markers', 'readings', 'events', 'sensorGlucose']:
+                        count_key = f"{key}_count"
+                        if count_key in summary:
+                            summary_text += f"📊 {key}: {summary[count_key]} entries\n"
+                            dates_key = f"{key}_sample_dates"
+                            if dates_key in summary:
+                                summary_text += f"   Sample dates: {summary[dates_key]}\n"
+
+                    if summary.get('last_sensor_timestamp'):
+                        summary_text += f"⏰ Last sensor: {summary['last_sensor_timestamp']}\n"
+
+                    return {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"✅ Web interface data downloaded successfully!\n\n" +
+                                       f"📁 File path: {result['file_path']}\n" +
+                                       f"📊 Data size: {result['data_size']} characters\n" +
+                                       f"🕐 Timestamp: {result['timestamp']}\n\n" +
+                                       f"📈 Data Summary:\n{summary_text}\n" +
+                                       f"Data preview: {data_preview}..."
+                            }
+                        ]
+                    }
+                else:
+                    return {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"❌ Failed to get web data:\n{result.get('error', 'Unknown error')}"
+                            }
+                        ]
+                    }
+
             else:
                 return {"error": f"Unknown tool: {tool_name}"}
 
@@ -409,15 +562,27 @@ if __name__ == "__main__":
         print(f"User info result: {result}")
 
         if result.get("success"):
-            # Test CSV download
-            print("\n2. Testing CSV download (7 days)...")
-            result = server.download_csv_data(7)
-            print(f"CSV download result: {result}")
+            # Test web data
+            print("\n2. Testing web data...")
+            result = server.get_web_data()
+            print(f"Web data result: {result}")
 
             if result.get("success"):
-                print(f"✅ Test successful! File saved to: {result['file_path']}")
+                print(f"✅ Web data test successful! File saved to: {result['file_path']}")
+                summary = result.get('summary', {})
+                print(f"Data summary: {summary}")
+
+                # Test CSV download
+                print("\n3. Testing CSV download (7 days)...")
+                result = server.download_csv_data(7)
+                print(f"CSV download result: {result}")
+
+                if result.get("success"):
+                    print(f"✅ CSV test successful! File saved to: {result['file_path']}")
+                else:
+                    print(f"❌ CSV download failed: {result.get('error')}")
             else:
-                print(f"❌ CSV download failed: {result.get('error')}")
+                print(f"❌ Web data failed: {result.get('error')}")
         else:
             print(f"❌ User info failed: {result.get('error')}")
     else:
