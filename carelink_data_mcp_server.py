@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Carelink CSV MCP Server - Explore Carelink CSV files
+Carelink Data MCP Server - Explore Carelink CSV files and web data
 
-This MCP server allows querying BG readings from Carelink CSV files by age (days ago).
+This MCP server allows querying BG readings from Carelink CSV files by age (days ago)
+and querying aggregated data from web interface JSON files.
 """
 import csv
 import json
@@ -13,9 +14,9 @@ import glob
 import os
 
 
-class CarelinkCSVServer:
+class CarelinkDataServer:
     def __init__(self):
-        self.name = "carelink_csv"
+        self.name = "carelink_data"
         self.version = "1.0.0"
 
     def find_csv_files(self) -> List[str]:
@@ -33,6 +34,117 @@ class CarelinkCSVServer:
             csv_files.extend(glob.glob(os.path.join(old_data_dir, "*.csv")))
 
         return csv_files
+
+    def find_web_data_files(self) -> List[str]:
+        """Find all web data JSON files in the data directory"""
+        main_data_dir = os.path.join(os.path.dirname(__file__), "data")
+        web_files = []
+
+        if os.path.exists(main_data_dir):
+            web_files.extend(glob.glob(os.path.join(main_data_dir, "web_data-*.json")))
+            web_files.extend(glob.glob(os.path.join(main_data_dir, "webdata-*.json")))
+
+        # Also check the old location for backward compatibility
+        old_data_dir = os.path.join(os.path.dirname(__file__), "carelink-python-client", "data")
+        if os.path.exists(old_data_dir):
+            web_files.extend(glob.glob(os.path.join(old_data_dir, "webdata-*.json")))
+            web_files.extend(glob.glob(os.path.join(old_data_dir, "web_data-*.json")))
+
+        return sorted(web_files, key=os.path.getmtime, reverse=True)  # Most recent first
+
+    def query_web_aggregated_data(self, aggreg: int, age: int, field: str, filepath: str = None) -> Dict[str, Any]:
+        """
+        Query aggregated data from web interface JSON files
+
+        Args:
+            aggreg: Aggregation period (1, 7, 14, or 30 days)
+            age: Age in days (0 = today, 1 = yesterday, etc.)
+            field: Data field ('tir', 'sensorUsage', or 'sg')
+            filepath: Optional specific file path, otherwise uses most recent
+
+        Returns:
+            dict: Query result with data or error
+        """
+        try:
+            # Validate parameters
+            if aggreg not in [1, 7, 14, 30]:
+                return {"success": False, "error": f"Invalid aggreg value: {aggreg}. Must be 1, 7, 14, or 30"}
+
+            if field not in ['tir', 'sensorUsage', 'sg']:
+                return {"success": False, "error": f"Invalid field: {field}. Must be 'tir', 'sensorUsage', or 'sg'"}
+
+            if age < 0:
+                return {"success": False, "error": f"Invalid age: {age}. Must be >= 0"}
+
+            # Find web data file
+            if filepath is None:
+                web_files = self.find_web_data_files()
+                if not web_files:
+                    return {"success": False, "error": "No web data files found"}
+                filepath = web_files[0]  # Most recent
+
+            if not os.path.exists(filepath):
+                return {"success": False, "error": f"File not found: {filepath}"}
+
+            # Load JSON data
+            with open(filepath, 'r', encoding='utf-8') as f:
+                web_data = json.load(f)
+
+            # Navigate to the requested data path: .ResponsePayload.mgdl.Agg{aggreg}d[{age}].{field}
+            try:
+                # Start with the base path
+                if 'ResponsePayload' not in web_data:
+                    return {"success": False, "error": "ResponsePayload not found in web data"}
+
+                payload = web_data['ResponsePayload']
+
+                if 'mgdl' not in payload:
+                    return {"success": False, "error": "mgdl not found in ResponsePayload"}
+
+                mgdl_data = payload['mgdl']
+
+                # Build aggregation key (e.g., "Agg1d", "Agg7d", etc.)
+                agg_key = f"Agg{aggreg}d"
+                if agg_key not in mgdl_data:
+                    available_keys = list(mgdl_data.keys())
+                    return {"success": False, "error": f"{agg_key} not found in mgdl data. Available keys: {available_keys}"}
+
+                agg_data = mgdl_data[agg_key]
+
+                # Check if it's an array and access by age index
+                if isinstance(agg_data, list):
+                    if age >= len(agg_data):
+                        return {"success": False, "error": f"Age index {age} out of range. Array has {len(agg_data)} elements"}
+
+                    age_data = agg_data[age]
+                else:
+                    return {"success": False, "error": f"{agg_key} is not an array, found: {type(agg_data)}"}
+
+                # Access the requested field
+                if not isinstance(age_data, dict) or field not in age_data:
+                    available_fields = list(age_data.keys()) if isinstance(age_data, dict) else []
+                    return {"success": False, "error": f"Field '{field}' not found in age data. Available fields: {available_fields}"}
+
+                result_data = age_data[field]
+
+                return {
+                    "success": True,
+                    "data": result_data,
+                    "query_path": f"ResponsePayload.mgdl.{agg_key}[{age}].{field}",
+                    "aggreg": aggreg,
+                    "age": age,
+                    "field": field,
+                    "filepath": filepath,
+                    "filename": os.path.basename(filepath)
+                }
+
+            except (KeyError, TypeError, IndexError) as e:
+                return {"success": False, "error": f"Failed to navigate data path: {str(e)}"}
+
+        except json.JSONDecodeError as e:
+            return {"success": False, "error": f"Invalid JSON in file {filepath}: {str(e)}"}
+        except Exception as e:
+            return {"success": False, "error": f"Unexpected error: {str(e)}"}
 
     def parse_carelink_csv(self, filepath: str) -> Dict[str, Any]:
         """Parse a Carelink CSV file and extract metadata and data"""
@@ -188,7 +300,7 @@ class CarelinkCSVServer:
 
 def handle_mcp_request(request: Dict[str, Any]) -> Dict[str, Any]:
     """Handle MCP protocol requests"""
-    server = CarelinkCSVServer()
+    server = CarelinkDataServer()
 
     method = request.get("method", "")
     params = request.get("params", {})
@@ -247,6 +359,35 @@ def handle_mcp_request(request: Dict[str, Any]) -> Dict[str, Any]:
                                 }
                             },
                             "required": ["filepath"]
+                        }
+                    },
+                    {
+                        "name": "query_web_data",
+                        "description": "Query aggregated data from web interface JSON files using path: ResponsePayload.mgdl.Agg{aggreg}d[{age}].{field}",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "aggreg": {
+                                    "type": "integer",
+                                    "description": "Aggregation period in days",
+                                    "enum": [1, 7, 14, 30]
+                                },
+                                "age": {
+                                    "type": "integer",
+                                    "description": "Age in days (0=today, 1=yesterday, etc)",
+                                    "minimum": 0
+                                },
+                                "field": {
+                                    "type": "string",
+                                    "description": "Data field to query",
+                                    "enum": ["tir", "sensorUsage", "sg"]
+                                },
+                                "filepath": {
+                                    "type": "string",
+                                    "description": "Optional specific file path, otherwise uses most recent web data file"
+                                }
+                            },
+                            "required": ["aggreg", "age", "field"]
                         }
                     }
                 ]
@@ -325,6 +466,39 @@ def handle_mcp_request(request: Dict[str, Any]) -> Dict[str, Any]:
                     ]
                 }
 
+            elif tool_name == "query_web_data":
+                aggreg = arguments.get("aggreg")
+                age = arguments.get("age")
+                field = arguments.get("field")
+                filepath = arguments.get("filepath")
+
+                result = server.query_web_aggregated_data(aggreg, age, field, filepath)
+
+                if result["success"]:
+                    return {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"✅ Web data query successful!\n\n" +
+                                       f"📊 Query: {result['query_path']}\n" +
+                                       f"📁 File: {result['filename']}\n" +
+                                       f"🔢 Aggregation: {result['aggreg']} days\n" +
+                                       f"📅 Age: {result['age']} days ago\n" +
+                                       f"🏷️ Field: {result['field']}\n\n" +
+                                       f"📈 Result: {json.dumps(result['data'], indent=2)}"
+                            }
+                        ]
+                    }
+                else:
+                    return {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"❌ Web data query failed:\n{result.get('error', 'Unknown error')}"
+                            }
+                        ]
+                    }
+
             else:
                 return {"error": f"Unknown tool: {tool_name}"}
 
@@ -362,34 +536,50 @@ def main():
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--test":
         # Test mode - run a quick test
-        server = CarelinkCSVServer()
+        server = CarelinkDataServer()
+
+        # Test CSV files
         files = server.find_csv_files()
         print(f"Found {len(files)} CSV files:")
         for f in files:
             print(f"  {f}")
 
-        if files:
-            print(f"\nTesting with most recent file: {files[-1]}")
-            try:
-                # Test today (age=0)
-                readings_today = server.get_bg_readings_by_age(files[-1], 0)
-                print(f"Glucose readings for today (age=0): {len(readings_today)}")
+        # Test web data files
+        web_files = server.find_web_data_files()
+        print(f"\nFound {len(web_files)} web data files:")
+        for f in web_files:
+            print(f"  {f}")
 
+        if files:
+            print(f"\nTesting CSV with most recent file: {files[-1]}")
+            try:
                 # Test yesterday (age=1)
                 readings_yesterday = server.get_bg_readings_by_age(files[-1], 1)
                 print(f"Glucose readings for yesterday (age=1): {len(readings_yesterday)}")
                 if readings_yesterday:
                     print("Sample reading:", readings_yesterday[0])
 
-                # Test range
-                readings_range = server.get_bg_readings_range(files[-1], 0, 3)
-                print(f"Readings for last 3 days: {len(readings_range)} days with data")
-                for day, data in readings_range.items():
-                    bg_count = len([r for r in data if r.get("bg_reading")])
-                    sensor_count = len([r for r in data if r.get("sensor_glucose")])
-                    print(f"  {day}: {len(data)} total, {bg_count} BG, {sensor_count} sensor")
+            except Exception as e:
+                print(f"CSV Error: {e}")
+
+        if web_files:
+            print(f"\nTesting web data query with most recent file: {web_files[0]}")
+            try:
+                # Test some common queries
+                test_queries = [
+                    (1, 1, "tir"),      # 1-day TIR for today
+                    (7, 1, "sensorUsage"),  # 7-day sensor usage for this week
+                    (14, 1, "sg"),      # 14-day glucose for last period
+                ]
+
+                for aggreg, age, field in test_queries:
+                    result = server.query_web_aggregated_data(aggreg, age, field, web_files[0])
+                    if result["success"]:
+                        print(f"  Query {result['query_path']}: {result['data']}")
+                    else:
+                        print(f"  Query Agg{aggreg}d[{age}].{field}: {result['error']}")
 
             except Exception as e:
-                print(f"Error: {e}")
+                print(f"Web data Error: {e}")
     else:
         main()

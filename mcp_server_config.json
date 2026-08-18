@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "carelink_csv": {
+    "carelink_data": {
       "command": "python3",
-      "args": ["./carelink_csv_mcp_server.py"],
+      "args": ["./carelink_data_mcp_server.py"],
       "cwd": "/var/home/kpouget/vayrac/git/agent-bolus"
     },
     "carelink_api": {
