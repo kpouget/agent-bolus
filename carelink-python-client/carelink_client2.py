@@ -603,6 +603,171 @@ class CareLinkClient(object):
       return data
 
    ###########################################################
+   # Generate CSV report and get UUID
+   ###########################################################
+   def _generate_csv_report(self, token_data, start_date=None, end_date=None, days_back=14):
+      """Generate a CSV report and return the UUID"""
+      log.info("_generate_csv_report() - generating new CSV report")
+
+      url = "https://carelink.minimed.eu/patient/reports/generateReport"
+
+      headers = {
+         "Authorization": "Bearer " + token_data["access_token"],
+         "Content-Type": "application/json; charset=utf-8",
+         "Origin": "https://carelink.minimed.eu",
+         "Referer": "https://carelink.minimed.eu/app/reports",
+         "Cookie": f"auth_tmp_token={token_data['access_token']}"
+      }
+
+      # Calculate date range if not provided
+      if not start_date or not end_date:
+         from datetime import datetime, timedelta
+         end_dt = datetime.now()
+         start_dt = end_dt - timedelta(days=days_back)
+         start_date = start_dt.strftime("%Y-%m-%d")
+         end_date = end_dt.strftime("%Y-%m-%d")
+
+      # Generate current timestamp
+      from datetime import datetime
+      client_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S+02:00")
+
+      # Debug: show available user and patient data
+      if self.__user:
+         log.info("   User data keys: %s" % list(self.__user.keys()))
+         log.info("   User ID: %s" % self.__user.get("id", "NOT_FOUND"))
+      if self.__patient:
+         log.info("   Patient data keys: %s" % list(self.__patient.keys()))
+         log.info("   Patient data: %s" % str(self.__patient))
+      else:
+         log.warning("   No patient data available")
+
+      # Get patient ID - use numeric ID from user data
+      patient_id = self.__username  # fallback to username
+      if self.__user and "id" in self.__user:
+         patient_id = str(self.__user["id"])  # Use numeric user ID
+         log.info("   Found numeric user ID: %s" % patient_id)
+      elif self.__patient and "patientId" in self.__patient:
+         patient_id = self.__patient["patientId"]
+      elif self.__patient and "id" in self.__patient:
+         patient_id = self.__patient["id"]
+
+      log.info("   Using patient ID: %s (type: %s)" % (patient_id, type(patient_id)))
+
+      # Request payload based on the user's curl (exact format)
+      payload = {
+         "clientTime": client_time,
+         "dailyDetailReportDays": [],
+         "patientId": str(patient_id),
+         "reportFileFormat": "CSV",
+         "reportShowAdherence": False,
+         "reportShowAssessmentAndProgress": False,
+         "reportShowBolusWizardFoodBolus": False,
+         "reportShowDashBoard": False,
+         "reportShowDataTable": False,
+         "reportShowDeviceSettings": False,
+         "reportShowEpisodeSummary": False,
+         "reportShowLogbook": False,
+         "reportShowOverview": False,
+         "reportShowWeeklyReview": False,
+         "reportShowSettingsHistory": False,
+         "reportShowInsulinAssessment": False,
+         "startDate": start_date,
+         "endDate": end_date,
+         "aggregatedCsvEnabled": True
+      }
+
+      log.info("   Payload: %s" % str(payload)[:200])
+
+      log.info("   Report date range: %s to %s" % (start_date, end_date))
+
+      self.__last_api_status = None
+      resp = requests.post(url=url, headers=headers, json=payload)
+      self.__last_api_status = resp.status_code
+      log.info("   Report generation status: %d" % resp.status_code)
+
+      try:
+         if resp.status_code == 200:
+            result = resp.json()
+            uuid = result.get('uuid')
+            if uuid:
+               log.info("   ✅ Report generated with UUID: %s" % uuid)
+               return uuid
+            else:
+               log.error("   ❌ No UUID in response: %s" % str(result))
+               return None
+         else:
+            log.error("   Failed to generate report - HTTP %d" % resp.status_code)
+            log.error("   Full response: %s" % resp.text)
+            return None
+      except Exception as e:
+         log.error("   Could not parse generation response: %s" % str(e))
+         log.error("   Raw response: %s" % resp.text)
+         return None
+
+
+   ###########################################################
+   # Check CSV report status
+   ###########################################################
+   def _check_csv_report_status(self, token_data, report_uuid):
+      """Check if CSV report is ready for download"""
+      url = f"https://carelink.minimed.eu/patient/reports/reportStatus?uuid={report_uuid}"
+
+      headers = {
+         "Authorization": "Bearer " + token_data["access_token"],
+         "Referer": "https://carelink.minimed.eu/app/reports",
+         "Cookie": f"auth_tmp_token={token_data['access_token']}"
+      }
+
+      self.__last_api_status = None
+      resp = requests.get(url=url, headers=headers)
+      self.__last_api_status = resp.status_code
+
+      try:
+         if resp.status_code == 200:
+            result = resp.json()
+            status = result.get('status', 'UNKNOWN')
+            return status
+         else:
+            log.warning("   Failed to check report status - HTTP %d" % resp.status_code)
+            return None
+      except Exception as e:
+         log.warning("   Could not parse status response: %s" % str(e))
+         return None
+
+   ###########################################################
+   # Wait for CSV report to be ready
+   ###########################################################
+   def _wait_for_csv_report(self, token_data, report_uuid, max_wait_seconds=60):
+      """Wait for CSV report to be ready, polling every 1 second"""
+      import time
+
+      log.info("   Waiting for report to be ready (UUID: %s)" % report_uuid)
+      log.info("   Will poll every 1s for up to %ds" % max_wait_seconds)
+
+      start_time = time.time()
+      attempt = 0
+
+      while time.time() - start_time < max_wait_seconds:
+         attempt += 1
+         status = self._check_csv_report_status(token_data, report_uuid)
+
+         if status == "READY":
+            log.info("   ✅ Report ready after %d attempts (%.1fs)" % (attempt, time.time() - start_time))
+            return True
+         elif status == "NOT_READY":
+            log.info("   ⏳ Attempt %d: Report not ready yet" % attempt)
+         elif status is None:
+            log.warning("   ❓ Attempt %d: Could not check status" % attempt)
+         else:
+            log.info("   📊 Attempt %d: Status = %s" % (attempt, status))
+
+         if time.time() - start_time < max_wait_seconds:
+            time.sleep(1)
+
+      log.error("   ⏰ Timeout: Report not ready after %ds" % max_wait_seconds)
+      return False
+
+   ###########################################################
    # Download CSV report (historical data)
    ###########################################################
    def _download_csv_report(self, token_data, report_uuid):
@@ -640,7 +805,13 @@ class CareLinkClient(object):
                log.info("   Raw response (first 200 chars): %s" % resp.text[:200])
                return resp.text
       else:
-         log.error("   Failed to download CSV report")
+         log.error("   Failed to download CSV report - HTTP %d" % resp.status_code)
+         # Show the actual error response
+         try:
+            error_data = resp.json()
+            log.error("   Server error: %s" % str(error_data))
+         except:
+            log.error("   Raw error response: %s" % resp.text[:500])
          return None
 
    ###########################################################
@@ -688,12 +859,13 @@ class CareLinkClient(object):
    ###########################################################
    # Download CSV report with historical data
    ###########################################################
-   def getCsvReport(self, report_uuid=None):
+   def getCsvReport(self, report_uuid, wait_if_not_ready=True):
       """
       Download CSV report containing historical data
 
       Args:
-         report_uuid (str): UUID of the report to download. If None, uses a default UUID
+         report_uuid (str): UUID of the report to download (required)
+         wait_if_not_ready (bool): Wait for report if not ready (default: True)
 
       Returns:
          str: CSV data as text, or None on error
@@ -707,12 +879,22 @@ class CareLinkClient(object):
             log.error("ERROR: unable to get valid access token")
             return None
 
-      # Use provided UUID or default
-      if report_uuid is None:
-         # This is the UUID from the user's curl command - might be a standard report
-         report_uuid = "e4a07978-94a3-4049-8188-ad259e7f2ec7"
+      if not report_uuid:
+         log.error("ERROR: report_uuid is required for CSV download")
+         return None
 
       log.info("Downloading CSV report with UUID: %s" % report_uuid)
+
+      # Check if we should wait for the report to be ready
+      if wait_if_not_ready:
+         status = self._check_csv_report_status(self.__tokenData, report_uuid)
+         if status == "NOT_READY":
+            log.info("Report not ready yet, waiting...")
+            if not self._wait_for_csv_report(self.__tokenData, report_uuid, max_wait_seconds=60):
+               log.error("ERROR: Report not ready after waiting")
+               return None
+         elif status != "READY" and status is not None:
+            log.info("Report status: %s" % status)
 
       # Download CSV: first try
       data = self._download_csv_report(self.__tokenData, report_uuid)
@@ -732,6 +914,66 @@ class CareLinkClient(object):
             # Failed permanently
             log.error("ERROR: unable to download CSV report")
             return None
+      return data
+
+
+   ###########################################################
+   # Generate and download CSV report
+   ###########################################################
+   def generateAndDownloadCsvReport(self, days_back=14):
+      """
+      Generate a new CSV report and download it immediately
+
+      Args:
+         days_back (int): Number of days of historical data to include (default: 14)
+
+      Returns:
+         str: CSV data as text, or None on error
+      """
+      # Check if access token is valid
+      if not self._is_token_valid(self.__accessTokenPayload):
+         self.__tokenData = self._do_refresh(self.__config, self.__tokenData)
+         self.__accessTokenPayload = self._get_access_token_payload(self.__tokenData)
+         self._write_token_file(self.__tokenData, self.__tokenFile)
+         if not self._is_token_valid(self.__accessTokenPayload):
+            log.error("ERROR: unable to get valid access token")
+            return None
+
+      log.info("Generating and downloading CSV report for %d days" % days_back)
+
+      # Step 1: Generate report and get UUID
+      uuid = self._generate_csv_report(self.__tokenData, days_back=days_back)
+      if not uuid:
+         log.error("ERROR: Could not generate CSV report")
+         return None
+
+      log.info("Report UUID: %s" % uuid)
+
+      # Step 2: Wait for report to be ready
+      if not self._wait_for_csv_report(self.__tokenData, uuid, max_wait_seconds=60):
+         log.error("ERROR: Report generation timed out")
+         return None
+
+      # Step 3: Download the report using the UUID
+      # Download CSV: first try
+      data = self._download_csv_report(self.__tokenData, uuid)
+
+      # Check API response
+      if self.__last_api_status in AUTH_ERROR_CODES:
+         # Try to refresh token
+         self.__tokenData = self._do_refresh(self.__config, self.__tokenData)
+         self.__accessTokenPayload = self._get_access_token_payload(self.__tokenData)
+         self._write_token_file(self.__tokenData, self.__tokenFile)
+
+         # Download CSV: second try
+         data = self._download_csv_report(self.__tokenData, uuid)
+
+         # Check API response
+         if self.__last_api_status in AUTH_ERROR_CODES:
+            # Failed permanently
+            log.error("ERROR: unable to download generated CSV report")
+            return None
+
       return data
 
    ###########################################################
