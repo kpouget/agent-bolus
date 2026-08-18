@@ -50,13 +50,16 @@ The server reads Carelink CSV files from `carelink-python-client/data/` and pars
 ## CSV File Location
 
 CSV files are automatically discovered in:
-`./carelink-python-client/data/*.csv`
+- `./data/*.csv` (main project data directory - preferred)
+- `./carelink-python-client/data/*.csv` (legacy location - backward compatibility)
 
 Download CSV files using:
 ```bash
 cd carelink-python-client
 python3 carelink_client2_cli.py --csv --verbose
 ```
+
+All new downloads are saved to the main `data/` directory.
 
 ## Sample Output
 

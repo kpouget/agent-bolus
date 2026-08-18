@@ -71,14 +71,14 @@ class CarelinkMcpServer:
                         "data_type": str(type(csv_data))
                     }
 
-                # Create data directory if it doesn't exist (relative to carelink dir)
-                data_dir = "data"
-                os.makedirs(data_dir, exist_ok=True)
+                # Create data directory in main project directory (not inside carelink-python-client)
+                main_data_dir = os.path.join(original_cwd, "data")
+                os.makedirs(main_data_dir, exist_ok=True)
 
                 # Generate filename
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"csv_report_{days}days-{timestamp}.csv"
-                filepath = os.path.join(data_dir, filename)
+                filepath = os.path.join(main_data_dir, filename)
 
                 # Save CSV data
                 with open(filepath, 'w', encoding='utf-8') as f:
@@ -99,7 +99,7 @@ class CarelinkMcpServer:
                     "file_size": file_size,
                     "line_count": line_count,
                     "timestamp": timestamp,
-                    "data_directory": os.path.abspath(data_dir)
+                    "data_directory": os.path.abspath(main_data_dir)
                 }
 
             finally:
@@ -182,13 +182,13 @@ class CarelinkMcpServer:
                         "response_code": client.getLastResponseCode()
                     }
 
-                # Save JSON data to file for reference (relative to carelink dir)
-                data_dir = "data"
-                os.makedirs(data_dir, exist_ok=True)
+                # Save JSON data to file in main project data directory
+                main_data_dir = os.path.join(original_cwd, "data")
+                os.makedirs(main_data_dir, exist_ok=True)
 
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"recent_data-{timestamp}.json"
-                filepath = os.path.join(data_dir, filename)
+                filepath = os.path.join(main_data_dir, filename)
 
                 with open(filepath, 'w', encoding='utf-8') as f:
                     json.dump(recent_data, f, indent=2)
@@ -246,13 +246,13 @@ class CarelinkMcpServer:
                         "response_code": client.getLastResponseCode()
                     }
 
-                # Save JSON data to file for reference (relative to carelink dir)
-                data_dir = "data"
-                os.makedirs(data_dir, exist_ok=True)
+                # Save JSON data to file in main project data directory
+                main_data_dir = os.path.join(original_cwd, "data")
+                os.makedirs(main_data_dir, exist_ok=True)
 
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"web_data-{timestamp}.json"
-                filepath = os.path.join(data_dir, filename)
+                filepath = os.path.join(main_data_dir, filename)
 
                 with open(filepath, 'w', encoding='utf-8') as f:
                     json.dump(web_data, f, indent=2)

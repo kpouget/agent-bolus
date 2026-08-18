@@ -31,8 +31,8 @@ VERSION = "1.0"
 
 
 def writeJson(jsonobj, name):
-   # Create data directory if it doesn't exist
-   data_dir = "data"
+   # Create data directory in parent directory (main project data folder)
+   data_dir = os.path.join("..", "data")
    os.makedirs(data_dir, exist_ok=True)
 
    filename = os.path.join(data_dir, name + "-" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".json")
@@ -97,8 +97,8 @@ if client.init():
 
             # Save CSV data to .csv file
             if csv_data and isinstance(csv_data, str):
-               # Create data directory if it doesn't exist
-               data_dir = "data"
+               # Create data directory in parent directory (main project data folder)
+               data_dir = os.path.join("..", "data")
                os.makedirs(data_dir, exist_ok=True)
 
                csv_filename = os.path.join(data_dir, filename_prefix + "-" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv")

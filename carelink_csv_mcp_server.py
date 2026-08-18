@@ -19,11 +19,20 @@ class CarelinkCSVServer:
         self.version = "1.0.0"
 
     def find_csv_files(self) -> List[str]:
-        """Find all CSV files in the data directory"""
-        data_dir = os.path.join(os.path.dirname(__file__), "carelink-python-client", "data")
-        if os.path.exists(data_dir):
-            return glob.glob(os.path.join(data_dir, "*.csv"))
-        return []
+        """Find all CSV files in the main project data directory"""
+        # Look in main project data directory first
+        main_data_dir = os.path.join(os.path.dirname(__file__), "data")
+        csv_files = []
+
+        if os.path.exists(main_data_dir):
+            csv_files.extend(glob.glob(os.path.join(main_data_dir, "*.csv")))
+
+        # Also check the old location for backward compatibility
+        old_data_dir = os.path.join(os.path.dirname(__file__), "carelink-python-client", "data")
+        if os.path.exists(old_data_dir):
+            csv_files.extend(glob.glob(os.path.join(old_data_dir, "*.csv")))
+
+        return csv_files
 
     def parse_carelink_csv(self, filepath: str) -> Dict[str, Any]:
         """Parse a Carelink CSV file and extract metadata and data"""
