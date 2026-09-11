@@ -547,7 +547,20 @@ def extract_correction_boluses(filepath: str, organized_bolus_data: Dict[str, Di
                 last_bolus = max(bolus_times)
                 end_time = last_bolus + timedelta(hours=3)
 
-                # Find correction boluses in this window
+                # Create set of meal bolus data to avoid double counting
+                # Include both exact timestamps and insulin amounts for better matching
+                meal_bolus_timestamps = set()
+                meal_bolus_data = []  # For more sophisticated matching
+
+                for event in bolus_events:
+                    meal_bolus_timestamps.add(event.timestamp)
+                    meal_bolus_data.append({
+                        'timestamp': datetime.strptime(event.timestamp, "%Y/%m/%d %H:%M:%S"),
+                        'insulin': event.insulin_delivered,
+                        'original_timestamp': event.timestamp
+                    })
+
+                # Find correction boluses in this window (excluding meal boluses)
                 correction_boluses = []
 
                 for line in lines[data_start_idx + 1:]:
@@ -572,6 +585,13 @@ def extract_correction_boluses(filepath: str, organized_bolus_data: Dict[str, Di
 
                         # Check if bolus is within our time window
                         if first_bolus <= bolus_time <= end_time:
+                            current_timestamp = f"{date_str} {time_str}"
+
+                            # Skip if this timestamp is already a meal bolus (avoid double counting)
+                            if current_timestamp in meal_bolus_timestamps:
+                                continue
+
+
                             # Check for insulin delivery
                             insulin_value = row_data[bolus_delivered_idx] if bolus_delivered_idx < len(row_data) else ""
                             carb_value = row_data[carb_input_idx] if carb_input_idx != -1 and carb_input_idx < len(row_data) else ""
@@ -586,10 +606,21 @@ def extract_correction_boluses(filepath: str, organized_bolus_data: Dict[str, Di
                                         except ValueError:
                                             pass
 
-                                    # Correction bolus: has insulin but no (or minimal) carbs
-                                    if insulin_float > 0 and carb_float == 0:
+                                    # Additional check for duplicate with same insulin amount
+                                    is_likely_duplicate_insulin = False
+                                    for meal_bolus in meal_bolus_data:
+                                        time_diff_seconds = abs((bolus_time - meal_bolus['timestamp']).total_seconds())
+                                        insulin_diff = abs(insulin_float - meal_bolus['insulin'])
+
+                                        # If same insulin amount (±0.01U) within 5 minutes, likely duplicate
+                                        if time_diff_seconds <= 300 and insulin_diff <= 0.01:
+                                            is_likely_duplicate_insulin = True
+                                            break
+
+                                    # True correction bolus: has insulin but no carbs AND not already counted as meal AND not duplicate insulin
+                                    if insulin_float > 0 and carb_float == 0 and not is_likely_duplicate_insulin:
                                         correction_boluses.append(BolusEvent(
-                                            timestamp=f"{date_str} {time_str}",
+                                            timestamp=current_timestamp,
                                             carb_input=carb_float,
                                             insulin_delivered=insulin_float,
                                             date=date_str,

@@ -96,7 +96,7 @@ list_csv_files
 
 # Test with invalid parameters (this should fail gracefully)
 echo "❌ Testing error handling (invalid days)..."
-echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": 999}}}' | python3 carelink_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": 999}}}' | python3 carelink_mcp/carelink_mcp_server.py
 
 echo -e "\n=== Data Extraction Workflow ==="
 echo "Extracting specific data points with jq..."

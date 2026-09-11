@@ -4,38 +4,38 @@
 echo "=== MCP Server Testing Suite ==="
 
 echo "1. Testing API Server (carelink_mcp_server.py)..."
-python3 carelink_mcp_server.py --test
+python3 carelink_mcp/carelink_mcp_server.py --test
 
 echo -e "\n2. Testing Data Server (carelink_data_mcp_server.py)..."
-python3 carelink_data_mcp_server.py --test
+python3 carelink_mcp/carelink_data_mcp_server.py --test
 
 echo -e "\n3. Checking server responsiveness..."
 echo "Testing API server response:"
-echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp_server.py | head -1
+echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp/carelink_mcp_server.py | head -1
 
 echo "Testing Data server response:"
-echo '{"method": "tools/list", "params": {}}' | python3 carelink_data_mcp_server.py | head -1
+echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp/carelink_data_mcp_server.py | head -1
 
 echo -e "\n4. Listing available tools for each server..."
 echo "API Server tools:"
-echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp_server.py | jq '.tools[].name' 2>/dev/null || echo "jq not available"
+echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp/carelink_mcp_server.py | jq '.tools[].name' 2>/dev/null || echo "jq not available"
 
 echo "Data Server tools:"
-echo '{"method": "tools/list", "params": {}}' | python3 carelink_data_mcp_server.py | jq '.tools[].name' 2>/dev/null || echo "jq not available"
+echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp/carelink_data_mcp_server.py | jq '.tools[].name' 2>/dev/null || echo "jq not available"
 
 echo -e "\n5. Testing JSON validation..."
 echo "Valid JSON test:"
 echo '{"method": "tools/call", "params": {"name": "get_user_info", "arguments": {}}}' | jq '.' > /dev/null 2>&1 && echo "✅ JSON is valid" || echo "❌ JSON is invalid"
 
 echo "Invalid JSON test (should fail):"
-echo '{"method": "tools/call", "params": {"name": "get_user_info", "arguments":}' | python3 carelink_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "get_user_info", "arguments":}' | python3 carelink_mcp/carelink_mcp_server.py
 
 echo -e "\n6. Testing error handling..."
 echo "Testing invalid tool name:"
-echo '{"method": "tools/call", "params": {"name": "invalid_tool", "arguments": {}}}' | python3 carelink_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "invalid_tool", "arguments": {}}}' | python3 carelink_mcp/carelink_mcp_server.py
 
 echo "Testing invalid parameters:"
-echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": -1}}}' | python3 carelink_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": -1}}}' | python3 carelink_mcp/carelink_mcp_server.py
 
 echo -e "\n7. File system checks..."
 echo "Checking data directory:"
@@ -67,7 +67,7 @@ echo "Checking data directory permissions:"
 
 echo -e "\n10. Quick functional test..."
 echo "Testing authentication (if credentials available):"
-timeout 10 bash -c 'echo '"'"'{"method": "tools/call", "params": {"name": "get_user_info", "arguments": {}}}'"'"' | python3 carelink_mcp_server.py' | head -3
+timeout 10 bash -c 'echo '"'"'{"method": "tools/call", "params": {"name": "get_user_info", "arguments": {}}}'"'"' | python3 carelink_mcp/carelink_mcp_server.py' | head -3
 
 echo -e "\n✅ Testing completed!"
 echo "💡 If any tests failed, check the error messages above."

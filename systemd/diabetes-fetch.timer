@@ -1,0 +1,21 @@
+[Unit]
+Description=Diabetes Data Fetch Timer (6am and 6pm daily)
+Documentation=file:///home/kpouget/vayrac/git/agent-bolus/scripts/fetch_diabetes_data.py
+Requires=diabetes-fetch.service
+
+[Timer]
+# Run twice daily: 6am and 6pm
+OnCalendar=*-*-* 06:00:00
+OnCalendar=*-*-* 18:00:00
+
+# If system was down, run missed timer within 10 minutes of boot
+Persistent=true
+
+# Add some randomization to avoid load spikes (±2 minutes)
+RandomizedDelaySec=120
+
+# Prevent multiple instances from running simultaneously
+Unit=diabetes-fetch.service
+
+[Install]
+WantedBy=timers.target

@@ -2,12 +2,12 @@
   "mcpServers": {
     "carelink_data": {
       "command": "python3",
-      "args": ["./carelink_data_mcp_server.py"],
+      "args": ["./carelink_mcp/carelink_data_mcp_server.py"],
       "cwd": "/var/home/kpouget/vayrac/git/agent-bolus"
     },
     "carelink_api": {
       "command": "python3",
-      "args": ["./carelink_mcp_server.py"],
+      "args": ["./carelink_mcp/carelink_mcp_server.py"],
       "cwd": "/var/home/kpouget/vayrac/git/agent-bolus"
     }
   }

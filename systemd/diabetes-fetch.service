@@ -1,0 +1,27 @@
+[Unit]
+Description=Diabetes Data Fetch from Carelink
+Documentation=file:///home/kpouget/vayrac/git/agent-bolus/scripts/fetch_diabetes_data.py
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/kpouget/vayrac/git/agent-bolus
+ExecStart=/usr/bin/python3 /home/kpouget/vayrac/git/agent-bolus/scripts/fetch_diabetes_data.py
+Environment=PATH=/home/kpouget/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Security and resource limits
+PrivateNetwork=false
+MemoryMax=1G
+TimeoutSec=900
+Restart=no
+
+# Environment file (optional - loads .env if present)
+EnvironmentFile=-/home/kpouget/vayrac/git/agent-bolus/.env
+
+[Install]
+WantedBy=default.target

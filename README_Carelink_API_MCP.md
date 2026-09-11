@@ -4,7 +4,7 @@ Direct interaction MCP server for downloading data from Carelink API and returni
 
 ## Overview
 
-The Carelink API MCP server (`carelink_mcp_server.py`) provides programmatic access to Carelink diabetes data through an MCP interface. It downloads data and returns file paths for further processing.
+The Carelink API MCP server (`carelink_mcp/carelink_mcp_server.py`) provides programmatic access to Carelink diabetes data through an MCP interface. It downloads data and returns file paths for further processing.
 
 ## Available Tools
 

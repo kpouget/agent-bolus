@@ -253,7 +253,10 @@ class DiabetesAgent(GlucoseDataManager, Agent):
         # Initialize the data manager
         GlucoseDataManager.__init__(self, patient_id)
         # Initialize Agent with LLM
-        Agent.__init__(self, llm=llm)
+        if llm is not None:
+            Agent.__init__(self, llm=llm)
+        else:
+            Agent.__init__(self)
 
     # ---
     # --- Generation methods (LLM-implemented)

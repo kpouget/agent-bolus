@@ -29,13 +29,13 @@ bash quickstart/basic.sh
 ### 🧪 Test Mode (No setup required)
 ```bash
 # Test the API server (downloads fresh data)
-python3 carelink_mcp_server.py --test
+python3 carelink_mcp/carelink_mcp_server.py --test
 
 # Test the data analysis server (queries existing files)
-python3 carelink_data_mcp_server.py --test
+python3 carelink_mcp/carelink_data_mcp_server.py --test
 ```
 
-## 📊 Server 1: `carelink_mcp_server.py` - Download Fresh Data
+## 📊 Server 1: `carelink_mcp/carelink_mcp_server.py` - Download Fresh Data
 
 ### CLI Usage via JSON-RPC
 
@@ -44,80 +44,80 @@ The server accepts JSON-RPC requests via stdin. Here are terminal examples:
 #### 1. Download CSV Data
 ```bash
 # Download 14 days (default)
-echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": 14}}}' | python3 carelink_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": 14}}}' | python3 carelink_mcp/carelink_mcp_server.py
 
 # Download 30 days
-echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": 30}}}' | python3 carelink_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": 30}}}' | python3 carelink_mcp/carelink_mcp_server.py
 
 # Download 7 days
-echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": 7}}}' | python3 carelink_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": 7}}}' | python3 carelink_mcp/carelink_mcp_server.py
 ```
 
 #### 2. Get Web Interface Data
 ```bash
-echo '{"method": "tools/call", "params": {"name": "get_web_data", "arguments": {}}}' | python3 carelink_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "get_web_data", "arguments": {}}}' | python3 carelink_mcp/carelink_mcp_server.py
 ```
 
 #### 3. Get Recent Mobile Data
 ```bash
-echo '{"method": "tools/call", "params": {"name": "get_recent_data", "arguments": {}}}' | python3 carelink_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "get_recent_data", "arguments": {}}}' | python3 carelink_mcp/carelink_mcp_server.py
 ```
 
 #### 4. Check Authentication Status
 ```bash
-echo '{"method": "tools/call", "params": {"name": "get_user_info", "arguments": {}}}' | python3 carelink_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "get_user_info", "arguments": {}}}' | python3 carelink_mcp/carelink_mcp_server.py
 ```
 
 #### 5. List Available Tools
 ```bash
-echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp_server.py
+echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp/carelink_mcp_server.py
 ```
 
-## 🔍 Server 2: `carelink_data_mcp_server.py` - Query Existing Data
+## 🔍 Server 2: `carelink_mcp/carelink_data_mcp_server.py` - Query Existing Data
 
 ### CLI Usage Examples
 
 #### 1. List Available CSV Files
 ```bash
-echo '{"method": "tools/call", "params": {"name": "list_csv_files", "arguments": {}}}' | python3 carelink_data_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "list_csv_files", "arguments": {}}}' | python3 carelink_mcp/carelink_data_mcp_server.py
 ```
 
 #### 2. Get Blood Glucose Readings by Day
 ```bash
 # Today's readings (age=0)
-echo '{"method": "tools/call", "params": {"name": "get_bg_readings", "arguments": {"filepath": "/home/kpouget/vayrac/git/agent-bolus/data/csv_report_14days-20260818_222356.csv", "age": 0}}}' | python3 carelink_data_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "get_bg_readings", "arguments": {"filepath": "/home/kpouget/vayrac/git/agent-bolus/data/csv_report_14days-20260818_222356.csv", "age": 0}}}' | python3 carelink_mcp/carelink_data_mcp_server.py
 
 # Yesterday's readings (age=1)  
-echo '{"method": "tools/call", "params": {"name": "get_bg_readings", "arguments": {"filepath": "/home/kpouget/vayrac/git/agent-bolus/data/csv_report_14days-20260818_222356.csv", "age": 1}}}' | python3 carelink_data_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "get_bg_readings", "arguments": {"filepath": "/home/kpouget/vayrac/git/agent-bolus/data/csv_report_14days-20260818_222356.csv", "age": 1}}}' | python3 carelink_mcp/carelink_data_mcp_server.py
 
 # Auto-select most recent file (omit filepath)
-echo '{"method": "tools/call", "params": {"name": "get_bg_readings", "arguments": {"age": 1}}}' | python3 carelink_data_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "get_bg_readings", "arguments": {"age": 1}}}' | python3 carelink_mcp/carelink_data_mcp_server.py
 ```
 
 #### 3. Get Readings for Date Range
 ```bash
 # Last week (0-7 days ago)
-echo '{"method": "tools/call", "params": {"name": "get_bg_readings_range", "arguments": {"filepath": "/home/kpouget/vayrac/git/agent-bolus/data/csv_report_14days-20260818_222356.csv", "start_age": 0, "end_age": 7}}}' | python3 carelink_data_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "get_bg_readings_range", "arguments": {"filepath": "/home/kpouget/vayrac/git/agent-bolus/data/csv_report_14days-20260818_222356.csv", "start_age": 0, "end_age": 7}}}' | python3 carelink_mcp/carelink_data_mcp_server.py
 
 # Auto-select most recent file
-echo '{"method": "tools/call", "params": {"name": "get_bg_readings_range", "arguments": {"start_age": 3, "end_age": 5}}}' | python3 carelink_data_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "get_bg_readings_range", "arguments": {"start_age": 3, "end_age": 5}}}' | python3 carelink_mcp/carelink_data_mcp_server.py
 ```
 
 #### 4. Query Web Data Aggregations
 ```bash
 # Time-in-Range for today (1-day aggregation, age 0)
-echo '{"method": "tools/call", "params": {"name": "query_web_data", "arguments": {"aggreg": 1, "age": 0, "field": "tir"}}}' | python3 carelink_data_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "query_web_data", "arguments": {"aggreg": 1, "age": 0, "field": "tir"}}}' | python3 carelink_mcp/carelink_data_mcp_server.py
 
 # Sensor usage for this week (7-day aggregation, age 1)
-echo '{"method": "tools/call", "params": {"name": "query_web_data", "arguments": {"aggreg": 7, "age": 1, "field": "sensorUsage"}}}' | python3 carelink_data_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "query_web_data", "arguments": {"aggreg": 7, "age": 1, "field": "sensorUsage"}}}' | python3 carelink_mcp/carelink_data_mcp_server.py
 
 # 14-day glucose summary
-echo '{"method": "tools/call", "params": {"name": "query_web_data", "arguments": {"aggreg": 14, "age": 1, "field": "sg"}}}' | python3 carelink_data_mcp_server.py
+echo '{"method": "tools/call", "params": {"name": "query_web_data", "arguments": {"aggreg": 14, "age": 1, "field": "sg"}}}' | python3 carelink_mcp/carelink_data_mcp_server.py
 ```
 
 #### 5. List Available Tools
 ```bash
-echo '{"method": "tools/list", "params": {}}' | python3 carelink_data_mcp_server.py
+echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp/carelink_data_mcp_server.py
 ```
 
 ## 📁 Quickstart Scripts Reference
@@ -147,10 +147,10 @@ Pipe the output through `jq` for better formatting:
 
 ```bash
 # Pretty print JSON output
-echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": 14}}}' | python3 carelink_mcp_server.py | jq '.'
+echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": 14}}}' | python3 carelink_mcp/carelink_mcp_server.py | jq '.'
 
 # Extract just the file path from download
-echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": 14}}}' | python3 carelink_mcp_server.py | jq -r '.content[0].text' | grep "File path:" | cut -d' ' -f3
+echo '{"method": "tools/call", "params": {"name": "download_csv", "arguments": {"days": 14}}}' | python3 carelink_mcp/carelink_mcp_server.py | jq -r '.content[0].text' | grep "File path:" | cut -d' ' -f3
 
 # Extract readings count
 get_bg_readings 1 | jq -r '.content[0].text' | grep "Total readings:" | cut -d':' -f2 | xargs
@@ -196,15 +196,15 @@ query_web_data 1 0 sg
 
 ```bash
 # Run built-in tests
-python3 carelink_mcp_server.py --test
-python3 carelink_data_mcp_server.py --test
+python3 carelink_mcp/carelink_mcp_server.py --test
+python3 carelink_mcp/carelink_data_mcp_server.py --test
 
 # List available tools for each server
-echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp_server.py | jq '.'
-echo '{"method": "tools/list", "params": {}}' | python3 carelink_data_mcp_server.py | jq '.'
+echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp/carelink_mcp_server.py | jq '.'
+echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp/carelink_data_mcp_server.py | jq '.'
 
 # Check if servers are responding
-echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp_server.py | head -1
+echo '{"method": "tools/list", "params": {}}' | python3 carelink_mcp/carelink_mcp_server.py | head -1
 ```
 
 ## 📁 File Paths
@@ -220,7 +220,7 @@ ls -la data/
 Use absolute paths when specifying filepaths:
 ```bash
 PWD_DATA="$(pwd)/data"
-echo "{\"method\": \"tools/call\", \"params\": {\"name\": \"get_bg_readings\", \"arguments\": {\"age\": 1, \"filepath\": \"$PWD_DATA/csv_report_14days-20260818_222356.csv\"}}}" | python3 carelink_data_mcp_server.py
+echo "{\"method\": \"tools/call\", \"params\": {\"name\": \"get_bg_readings\", \"arguments\": {\"age\": 1, \"filepath\": \"$PWD_DATA/csv_report_14days-20260818_222356.csv\"}}}" | python3 carelink_mcp/carelink_data_mcp_server.py
 ```
 
 ## ⚠️ Error Handling

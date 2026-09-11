@@ -6,8 +6,9 @@ A collection of AI agents and tools for diabetes monitoring and analysis.
 
 ```
 agent-bolus/
-├── carelink_mcp_server.py          # MCP server for Carelink API downloads
-├── carelink_data_mcp_server.py     # MCP server for querying CSV/JSON data
+├── carelink_mcp/                   # MCP servers for Carelink data access
+│   ├── carelink_mcp_server.py      #   MCP server for Carelink API downloads  
+│   └── carelink_data_mcp_server.py #   MCP server for querying CSV/JSON data
 ├── quickstart/                     # CLI scripts for MCP servers
 │   ├── helpers.sh                  #   Bash functions for easy usage
 │   ├── basic.sh                    #   Raw JSON-RPC examples
