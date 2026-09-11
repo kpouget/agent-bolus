@@ -2,10 +2,31 @@
 
 This guide shows how to invoke the MCP servers directly from the command line terminal.
 
-## 🚀 Quick Start - Test Mode
+## 🚀 Quick Start Options
 
-Both servers have built-in test modes for immediate usage:
+Choose your preferred way to get started:
 
+### 📁 Ready-to-Use Scripts
+```bash
+# Use pre-built helper functions
+source quickstart/helpers.sh
+download_csv 14
+get_bg_readings 1
+
+# Run complete workflows  
+bash quickstart/workflows.sh
+
+# Copy one-liner commands
+bash quickstart/oneliners.sh
+
+# Test everything
+bash quickstart/testing.sh
+
+# See all raw examples
+bash quickstart/basic.sh
+```
+
+### 🧪 Test Mode (No setup required)
 ```bash
 # Test the API server (downloads fresh data)
 python3 carelink_mcp_server.py --test
@@ -99,71 +120,21 @@ echo '{"method": "tools/call", "params": {"name": "query_web_data", "arguments":
 echo '{"method": "tools/list", "params": {}}' | python3 carelink_data_mcp_server.py
 ```
 
-## 🛠 Bash Helper Functions
+## 📁 Quickstart Scripts Reference
 
-Create these functions in your `.bashrc` or run them in your terminal for easier usage:
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `quickstart/helpers.sh` | Bash functions for easy CLI use | `source quickstart/helpers.sh` |
+| `quickstart/basic.sh` | Raw JSON-RPC examples | `bash quickstart/basic.sh` |
+| `quickstart/workflows.sh` | Complete monitoring workflows | `bash quickstart/workflows.sh` |  
+| `quickstart/oneliners.sh` | Copy-paste command examples | `bash quickstart/oneliners.sh` |
+| `quickstart/testing.sh` | Test suite and debugging | `bash quickstart/testing.sh` |
 
+### Helper Functions Quick Reference
+After sourcing `quickstart/helpers.sh`:
 ```bash
-# Download CSV data
-download_csv() {
-    local days=${1:-14}
-    echo "{\"method\": \"tools/call\", \"params\": {\"name\": \"download_csv\", \"arguments\": {\"days\": $days}}}" | python3 carelink_mcp_server.py
-}
-
-# Get web data
-get_web_data() {
-    echo '{"method": "tools/call", "params": {"name": "get_web_data", "arguments": {}}}' | python3 carelink_mcp_server.py
-}
-
-# Get recent data
-get_recent_data() {
-    echo '{"method": "tools/call", "params": {"name": "get_recent_data", "arguments": {}}}' | python3 carelink_mcp_server.py
-}
-
-# Check auth status
-check_auth() {
-    echo '{"method": "tools/call", "params": {"name": "get_user_info", "arguments": {}}}' | python3 carelink_mcp_server.py
-}
-
-# List CSV files
-list_csv_files() {
-    echo '{"method": "tools/call", "params": {"name": "list_csv_files", "arguments": {}}}' | python3 carelink_data_mcp_server.py
-}
-
-# Get BG readings by age
-get_bg_readings() {
-    local age=${1:-0}
-    local filepath=${2:-""}
-    if [ -z "$filepath" ]; then
-        echo "{\"method\": \"tools/call\", \"params\": {\"name\": \"get_bg_readings\", \"arguments\": {\"age\": $age}}}" | python3 carelink_data_mcp_server.py
-    else
-        echo "{\"method\": \"tools/call\", \"params\": {\"name\": \"get_bg_readings\", \"arguments\": {\"age\": $age, \"filepath\": \"$filepath\"}}}" | python3 carelink_data_mcp_server.py
-    fi
-}
-
-# Get BG readings range
-get_bg_range() {
-    local start_age=${1:-0}
-    local end_age=${2:-7}
-    echo "{\"method\": \"tools/call\", \"params\": {\"name\": \"get_bg_readings_range\", \"arguments\": {\"start_age\": $start_age, \"end_age\": $end_age}}}" | python3 carelink_data_mcp_server.py
-}
-
-# Query web aggregated data
-query_web_data() {
-    local aggreg=$1
-    local age=$2
-    local field=$3
-    echo "{\"method\": \"tools/call\", \"params\": {\"name\": \"query_web_data\", \"arguments\": {\"aggreg\": $aggreg, \"age\": $age, \"field\": \"$field\"}}}" | python3 carelink_data_mcp_server.py
-}
-```
-
-### Usage Examples with Helper Functions
-```bash
-# Download data
 download_csv 30          # Download 30 days
 get_web_data            # Get web interface data
-
-# Query data  
 list_csv_files          # See available files
 get_bg_readings 1       # Yesterday's readings
 get_bg_range 0 7        # Last week
@@ -317,5 +288,35 @@ query_web_data 1 0 tir    # Today's TIR
 query_web_data 7 0 tir    # This week's TIR  
 query_web_data 14 0 tir   # This 14-day period TIR
 ```
+
+## 🎯 Complete Example Session
+
+```bash
+# 1. Load helper functions
+source quickstart/helpers.sh
+
+# 2. Test everything is working
+bash quickstart/testing.sh
+
+# 3. Download fresh data
+download_csv 14
+
+# 4. Get yesterday's readings
+get_bg_readings 1
+
+# 5. Check weekly Time-in-Range  
+query_web_data 7 0 tir
+
+# 6. Run a complete workflow
+bash quickstart/workflows.sh
+```
+
+## 📚 Further Reading
+
+- **`quickstart/README.md`** - Detailed script documentation
+- **`quickstart/basic.sh`** - Raw JSON-RPC examples for learning
+- **`quickstart/oneliners.sh`** - Copy-paste commands and alias ideas
+- **`README_Carelink_API_MCP.md`** - API server details
+- **`README_MCP_Server.md`** - Data server details
 
 Happy CLI glucose monitoring! 📊💉
