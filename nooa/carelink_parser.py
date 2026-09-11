@@ -495,6 +495,123 @@ def extract_bg_for_periods(filepath: str, organized_bolus_data: Dict[str, Dict[s
 
     return bg_data
 
+def extract_correction_boluses(filepath: str, organized_bolus_data: Dict[str, Dict[str, List[BolusEvent]]]) -> Dict[str, Dict[str, List[BolusEvent]]]:
+    """
+    Extract correction boluses (insulin-only, no carbs) during the BG response periods.
+
+    Args:
+        filepath: Path to Carelink CSV file
+        organized_bolus_data: Dict with structure {date: {period: [bolus_events]}}
+
+    Returns:
+        Dict with structure {date: {period: [correction_boluses]}}
+    """
+    correction_data = {}
+
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        # Find the data start line
+        data_start_idx = -1
+        for i, line in enumerate(lines):
+            if line.startswith("Index;Date;Time;"):
+                data_start_idx = i
+                headers = [col.strip() for col in line.strip().split(';')]
+                break
+
+        if data_start_idx == -1:
+            raise ValueError("Could not find data header in CSV file")
+
+        # Find column indices
+        date_idx = headers.index("Date") if "Date" in headers else 1
+        time_idx = headers.index("Time") if "Time" in headers else 2
+        carb_input_idx = headers.index("BWZ Carb Input (grams)") if "BWZ Carb Input (grams)" in headers else -1
+        bolus_delivered_idx = headers.index("Bolus Volume Delivered (U)") if "Bolus Volume Delivered (U)" in headers else -1
+
+        if bolus_delivered_idx == -1:
+            return {}
+
+        # For each date/period combination, find correction boluses in time window
+        for date, periods in organized_bolus_data.items():
+            correction_data[date] = {}
+
+            for period_name, bolus_events in periods.items():
+                if not bolus_events:
+                    correction_data[date][period_name] = []
+                    continue
+
+                # Find time window (same logic as BG extraction)
+                bolus_times = [datetime.strptime(f"{event.date} {event.time}", "%Y/%m/%d %H:%M:%S") for event in bolus_events]
+                first_bolus = min(bolus_times)
+                last_bolus = max(bolus_times)
+                end_time = last_bolus + timedelta(hours=3)
+
+                # Find correction boluses in this window
+                correction_boluses = []
+
+                for line in lines[data_start_idx + 1:]:
+                    line = line.strip()
+                    if not line or line.startswith('-'):
+                        continue
+
+                    row_data = [col.strip().strip('"') for col in line.split(';')]
+
+                    if len(row_data) <= max(date_idx, time_idx, bolus_delivered_idx):
+                        continue
+
+                    date_str = row_data[date_idx]
+                    time_str = row_data[time_idx]
+
+                    if not date_str or not time_str:
+                        continue
+
+                    try:
+                        # Parse timestamp
+                        bolus_time = datetime.strptime(f"{date_str} {time_str}", "%Y/%m/%d %H:%M:%S")
+
+                        # Check if bolus is within our time window
+                        if first_bolus <= bolus_time <= end_time:
+                            # Check for insulin delivery
+                            insulin_value = row_data[bolus_delivered_idx] if bolus_delivered_idx < len(row_data) else ""
+                            carb_value = row_data[carb_input_idx] if carb_input_idx != -1 and carb_input_idx < len(row_data) else ""
+
+                            if insulin_value:
+                                try:
+                                    insulin_float = float(insulin_value.replace(',', '.'))
+                                    carb_float = 0.0
+                                    if carb_value:
+                                        try:
+                                            carb_float = float(carb_value.replace(',', '.'))
+                                        except ValueError:
+                                            pass
+
+                                    # Correction bolus: has insulin but no (or minimal) carbs
+                                    if insulin_float > 0 and carb_float == 0:
+                                        correction_boluses.append(BolusEvent(
+                                            timestamp=f"{date_str} {time_str}",
+                                            carb_input=carb_float,
+                                            insulin_delivered=insulin_float,
+                                            date=date_str,
+                                            time=time_str
+                                        ))
+
+                                except ValueError:
+                                    pass
+
+                    except ValueError:
+                        continue
+
+                # Sort by timestamp
+                correction_boluses.sort(key=lambda x: datetime.strptime(x.timestamp, "%Y/%m/%d %H:%M:%S"))
+                correction_data[date][period_name] = correction_boluses
+
+    except Exception as e:
+        print(f"❌ Error extracting correction boluses: {e}")
+        return {}
+
+    return correction_data
+
 # Test function
 def test_parser():
     """Test the CSV parser with hardcoded file."""

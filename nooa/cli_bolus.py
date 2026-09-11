@@ -6,7 +6,7 @@ import sys
 import argparse
 import statistics
 from diabetes_agent import GlucoseDataManager
-from carelink_parser import parse_bolus_events, load_latest_csv_file, extract_bg_for_periods
+from carelink_parser import parse_bolus_events, load_latest_csv_file, extract_bg_for_periods, extract_correction_boluses
 
 def show_bolus(filepath: str = None, days: int = 7):
     """
@@ -44,6 +44,10 @@ def show_bolus(filepath: str = None, days: int = 7):
     # Extract BG data for each period
     print("🩸 Extracting BG sensor data...")
     bg_data = extract_bg_for_periods(filepath, all_data)
+
+    # Extract correction boluses for each period
+    print("💉 Extracting correction boluses...")
+    correction_data = extract_correction_boluses(filepath, all_data)
     print()
 
     # Define period order for consistent display
@@ -100,6 +104,14 @@ def show_bolus(filepath: str = None, days: int = 7):
                         print(f"     🩸 BG Response: {len(bg_readings)} readings ({first_time}-{last_time})")
                         print(f"       📊 Start {start_bg} → Finish {finish_bg} | Min {min_bg} | Max {max_bg} | Median {median_bg:.0f} | Avg {avg_bg:.0f} mg/dL")
                         print(f"       🚨 Under 80: {under_80} | Over 200: {above_200} readings")
+
+                # Show correction boluses for this period/date
+                if date in correction_data and period in correction_data[date]:
+                    correction_boluses = correction_data[date][period]
+                    if correction_boluses:
+                        print(f"     💉 Correction Boluses: {len(correction_boluses)} during period")
+                        for corr in correction_boluses:
+                            print(f"       {corr.time} - {corr.insulin_delivered}U correction")
 
         if not has_data:
             print(f"     (no {period.lower()} boluses in last {days} days)")
