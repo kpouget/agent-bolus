@@ -54,10 +54,16 @@ class RatioAnalysisAgent(DiabetesAgent):
         # Organize data by periods
         all_periods_data = self.get_all_periods_for_days(bolus_events, days=days_back)
 
-        # Extract supplementary data
-        bg_data = extract_bg_for_periods(filepath, all_periods_data)
-        correction_data = extract_correction_boluses(filepath, all_periods_data)
-        basal_data = extract_basal_for_periods(filepath, all_periods_data)
+        # Filter to only the target period for efficient extraction
+        target_period_data = {}
+        for date, periods in all_periods_data.items():
+            if period_name in periods:
+                target_period_data[date] = {period_name: periods[period_name]}
+
+        # Extract supplementary data for target period only
+        bg_data = extract_bg_for_periods(filepath, target_period_data)
+        correction_data = extract_correction_boluses(filepath, target_period_data)
+        basal_data = extract_basal_for_periods(filepath, target_period_data)
 
         # Structure data for the specified period only
         period_analysis = {
@@ -189,7 +195,7 @@ class RatioAnalysisAgent(DiabetesAgent):
         period_dir = os.path.join(output_dir, f"{prefix}_{period_name.lower()}")
         os.makedirs(period_dir, exist_ok=True)
 
-        filename = f"{days_analyzed}days.yaml"
+        filename = f"bg_data_{days_analyzed}days.yaml"
         filepath = os.path.join(period_dir, filename)
 
         # Add metadata
@@ -226,10 +232,12 @@ class RatioAnalysisAgent(DiabetesAgent):
         period_name = period_analysis_data.get("period_name", "unknown")
         days_analyzed = len(period_analysis_data.get("days_data", []))
 
-        period_dir = os.path.join(output_dir, period_name.lower())
+        # Create period subdirectory with numeric prefix
+        prefix = self._get_period_prefix(period_name)
+        period_dir = os.path.join(output_dir, f"{prefix}_{period_name.lower()}")
         os.makedirs(period_dir, exist_ok=True)
 
-        filename = "plot_data.yaml"
+        filename = "insuline_data_7days.yml"
         filepath = os.path.join(period_dir, filename)
 
         # Organize data for plotting
@@ -323,7 +331,9 @@ class RatioAnalysisAgent(DiabetesAgent):
         # Create period-specific subdirectory for YAML files
         period_name = period_analysis_data.get("period_name", "unknown")
 
-        period_dir = os.path.join(output_dir, period_name.lower())
+        # Create period subdirectory with numeric prefix
+        prefix = self._get_period_prefix(period_name)
+        period_dir = os.path.join(output_dir, f"{prefix}_{period_name.lower()}")
         os.makedirs(period_dir, exist_ok=True)
 
         filename = "bg_detailed.yaml"
@@ -399,7 +409,9 @@ class RatioAnalysisAgent(DiabetesAgent):
             Path to saved file
         """
         # Create period-specific subdirectory
-        period_dir = os.path.join(output_dir, period_name.lower())
+        # Create period subdirectory with numeric prefix
+        prefix = self._get_period_prefix(period_name)
+        period_dir = os.path.join(output_dir, f"{prefix}_{period_name.lower()}")
         os.makedirs(period_dir, exist_ok=True)
 
         filename = "llm_analysis.md"

@@ -245,10 +245,10 @@ async def run_bolus_review(target_periods=None):
                 print(f"   ⚠️  No period directory found for {period}")
                 continue
 
-            plot_data_files = list(period_dir.glob("plot_data.yaml"))
+            plot_data_files = list(period_dir.glob("insuline_data_7days.yml"))
             bg_detailed_files = list(period_dir.glob("bg_detailed.yaml"))
             llm_analysis_files = list(period_dir.glob("llm_analysis.md"))
-            complete_data_files = list(period_dir.glob("*days.yaml"))
+            complete_data_files = list(period_dir.glob("bg_data_*days.yaml"))
 
             if not plot_data_files:
                 print(f"   ⚠️  No plot data found for {period}")
