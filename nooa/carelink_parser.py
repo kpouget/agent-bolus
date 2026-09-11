@@ -612,6 +612,166 @@ def extract_correction_boluses(filepath: str, organized_bolus_data: Dict[str, Di
 
     return correction_data
 
+@dataclass
+class BasalEvent:
+    """A basal rate or temp basal event."""
+    timestamp: str
+    basal_rate: Optional[float] = None  # U/h
+    temp_basal_amount: Optional[float] = None
+    temp_basal_type: Optional[str] = None
+    temp_basal_duration: Optional[str] = None
+    preset_temp_basal_name: Optional[str] = None
+    date: str = ""
+    time: str = ""
+
+def extract_basal_for_periods(filepath: str, organized_bolus_data: Dict[str, Dict[str, List[BolusEvent]]]) -> Dict[str, Dict[str, List[BasalEvent]]]:
+    """
+    Extract basal rate information for each period/day based on bolus timing.
+
+    Args:
+        filepath: Path to Carelink CSV file
+        organized_bolus_data: Dict with structure {date: {period: [bolus_events]}}
+
+    Returns:
+        Dict with structure {date: {period: [basal_events]}}
+    """
+    basal_data = {}
+
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        # Find the data start line
+        data_start_idx = -1
+        for i, line in enumerate(lines):
+            if line.startswith("Index;Date;Time;"):
+                data_start_idx = i
+                headers = [col.strip() for col in line.strip().split(';')]
+                break
+
+        if data_start_idx == -1:
+            raise ValueError("Could not find data header in CSV file")
+
+        # Find column indices for basal data
+        date_idx = headers.index("Date") if "Date" in headers else 1
+        time_idx = headers.index("Time") if "Time" in headers else 2
+        basal_rate_idx = headers.index("Basal Rate (U/h)") if "Basal Rate (U/h)" in headers else -1
+        temp_basal_amount_idx = headers.index("Temp Basal Amount") if "Temp Basal Amount" in headers else -1
+        temp_basal_type_idx = headers.index("Temp Basal Type") if "Temp Basal Type" in headers else -1
+        temp_basal_duration_idx = headers.index("Temp Basal Duration (h:mm:ss)") if "Temp Basal Duration (h:mm:ss)" in headers else -1
+        preset_temp_basal_idx = headers.index("Preset Temp Basal Name") if "Preset Temp Basal Name" in headers else -1
+
+        print(f"📊 Extracting Basal: Date col={date_idx}, Time col={time_idx}, Basal col={basal_rate_idx}, Temp col={temp_basal_amount_idx}")
+
+        # For each date/period combination, determine time windows and extract basal data
+        for date, periods in organized_bolus_data.items():
+            basal_data[date] = {}
+
+            for period_name, bolus_events in periods.items():
+                if not bolus_events:
+                    basal_data[date][period_name] = []
+                    continue
+
+                # Find first and last bolus times
+                bolus_times = [datetime.strptime(f"{event.date} {event.time}", "%Y/%m/%d %H:%M:%S") for event in bolus_events]
+                first_bolus = min(bolus_times)
+                last_bolus = max(bolus_times)
+
+                # Calculate time window: first bolus to 3h after last bolus
+                end_time = last_bolus + timedelta(hours=3)
+
+                # Extract basal data in this time window
+                period_basal_events = []
+
+                for line in lines[data_start_idx + 1:]:
+                    line = line.strip()
+                    if not line or line.startswith('-'):
+                        continue
+
+                    row_data = [col.strip().strip('"') for col in line.split(';')]
+
+                    if len(row_data) <= max(date_idx, time_idx):
+                        continue
+
+                    date_str = row_data[date_idx]
+                    time_str = row_data[time_idx]
+
+                    if not date_str or not time_str:
+                        continue
+
+                    try:
+                        # Parse timestamp
+                        event_time = datetime.strptime(f"{date_str} {time_str}", "%Y/%m/%d %H:%M:%S")
+
+                        # Check if event is within our time window
+                        if first_bolus <= event_time <= end_time:
+                            # Check if this row has basal data
+                            has_basal_data = False
+                            basal_event = BasalEvent(
+                                timestamp=f"{date_str} {time_str}",
+                                date=date_str,
+                                time=time_str
+                            )
+
+                            # Extract basal rate
+                            if basal_rate_idx != -1 and basal_rate_idx < len(row_data):
+                                basal_val = row_data[basal_rate_idx].strip()
+                                if basal_val:
+                                    try:
+                                        basal_event.basal_rate = float(basal_val.replace(',', '.'))
+                                        has_basal_data = True
+                                    except ValueError:
+                                        pass
+
+                            # Extract temp basal data
+                            if temp_basal_amount_idx != -1 and temp_basal_amount_idx < len(row_data):
+                                temp_val = row_data[temp_basal_amount_idx].strip()
+                                if temp_val:
+                                    try:
+                                        basal_event.temp_basal_amount = float(temp_val.replace(',', '.'))
+                                        has_basal_data = True
+                                    except ValueError:
+                                        pass
+
+                            if temp_basal_type_idx != -1 and temp_basal_type_idx < len(row_data):
+                                temp_type = row_data[temp_basal_type_idx].strip()
+                                if temp_type:
+                                    basal_event.temp_basal_type = temp_type
+                                    has_basal_data = True
+
+                            if temp_basal_duration_idx != -1 and temp_basal_duration_idx < len(row_data):
+                                temp_dur = row_data[temp_basal_duration_idx].strip()
+                                if temp_dur:
+                                    basal_event.temp_basal_duration = temp_dur
+                                    has_basal_data = True
+
+                            if preset_temp_basal_idx != -1 and preset_temp_basal_idx < len(row_data):
+                                preset_name = row_data[preset_temp_basal_idx].strip()
+                                if preset_name:
+                                    basal_event.preset_temp_basal_name = preset_name
+                                    has_basal_data = True
+
+                            if has_basal_data:
+                                period_basal_events.append(basal_event)
+
+                    except ValueError:
+                        continue
+
+                # Sort basal events by timestamp
+                period_basal_events.sort(key=lambda x: datetime.strptime(x.timestamp, "%Y/%m/%d %H:%M:%S"))
+                basal_data[date][period_name] = period_basal_events
+
+                # Log summary
+                if period_basal_events:
+                    temp_events = len([e for e in period_basal_events if e.temp_basal_type or e.temp_basal_amount])
+                    print(f"   📅 {date} {period_name}: {len(period_basal_events)} basal events, {temp_events} temp basal")
+
+    except Exception as e:
+        print(f"❌ Error extracting basal data: {e}")
+        return {}
+
+    return basal_data
+
 # Test function
 def test_parser():
     """Test the CSV parser with hardcoded file."""

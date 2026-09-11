@@ -5,8 +5,9 @@ CLI tool for displaying bolus data organized by periods
 import sys
 import argparse
 import statistics
+from datetime import datetime
 from diabetes_agent import GlucoseDataManager
-from carelink_parser import parse_bolus_events, load_latest_csv_file, extract_bg_for_periods, extract_correction_boluses
+from carelink_parser import parse_bolus_events, load_latest_csv_file, extract_bg_for_periods, extract_correction_boluses, extract_basal_for_periods
 
 def show_bolus(filepath: str = None, days: int = 7):
     """
@@ -48,6 +49,10 @@ def show_bolus(filepath: str = None, days: int = 7):
     # Extract correction boluses for each period
     print("💉 Extracting correction boluses...")
     correction_data = extract_correction_boluses(filepath, all_data)
+
+    # Extract basal data for each period
+    print("💧 Extracting basal rates...")
+    basal_data = extract_basal_for_periods(filepath, all_data)
     print()
 
     # Define period order for consistent display
@@ -112,6 +117,79 @@ def show_bolus(filepath: str = None, days: int = 7):
                         print(f"     💉 Correction Boluses: {len(correction_boluses)} during period")
                         for corr in correction_boluses:
                             print(f"       {corr.time} - {corr.insulin_delivered}U correction")
+
+                # Show basal data for this period/date
+                if date in basal_data and period in basal_data[date]:
+                    basal_events = basal_data[date][period]
+                    if basal_events:
+                        print(f"     💧 Basal Data: {len(basal_events)} events during period")
+
+                        # Group events by type
+                        standard_basal = [e for e in basal_events if e.basal_rate is not None and not e.temp_basal_type]
+                        temp_basal = [e for e in basal_events if e.temp_basal_type or e.temp_basal_amount or e.preset_temp_basal_name]
+
+                        # Show standard basal rates with durations
+                        if standard_basal:
+                            rates = [e.basal_rate for e in standard_basal]
+                            avg_rate = sum(rates) / len(rates)
+
+                            if len(set(rates)) == 1:
+                                print(f"       📊 Basal Rate: {rates[0]:.2f}U/h constant | ~{avg_rate * 3:.1f}U total (3h)")
+                            else:
+                                print(f"       📊 Basal Rate: {min(rates):.2f}-{max(rates):.2f}U/h range | {avg_rate:.2f}U/h avg | ~{avg_rate * 3:.1f}U total (3h)")
+
+                                # Show all basal rate changes with durations
+                                print(f"         📋 All rate changes during period:")
+                                rate_changes = []
+                                prev_rate = None
+
+                                for event in standard_basal:
+                                    if event.basal_rate != prev_rate:
+                                        rate_changes.append((event.timestamp, event.time, event.basal_rate))
+                                        prev_rate = event.basal_rate
+
+                                # Show each rate change with duration
+                                for i, (timestamp, time, rate) in enumerate(rate_changes):
+                                    if i == len(rate_changes) - 1:
+                                        # Last rate change - continues until end
+                                        print(f"         {time} → {rate:.2f}U/h (continues)")
+                                    else:
+                                        # Calculate duration until next change
+                                        next_timestamp = rate_changes[i + 1][0]
+                                        start_dt = datetime.strptime(timestamp, "%Y/%m/%d %H:%M:%S")
+                                        end_dt = datetime.strptime(next_timestamp, "%Y/%m/%d %H:%M:%S")
+
+                                        duration_seconds = (end_dt - start_dt).total_seconds()
+                                        duration_minutes = int(duration_seconds / 60)
+
+                                        if duration_minutes >= 60:
+                                            hours = duration_minutes // 60
+                                            mins = duration_minutes % 60
+                                            if mins > 0:
+                                                dur_str = f"{hours}h {mins}m"
+                                            else:
+                                                dur_str = f"{hours}h"
+                                        else:
+                                            dur_str = f"{duration_minutes}m"
+
+                                        print(f"         {time} → {rate:.2f}U/h for {dur_str}")
+
+                        # Show temp basal events with full details
+                        if temp_basal:
+                            print(f"       🔄 Temp Basal: {len(temp_basal)} events")
+                            for temp in temp_basal:
+                                parts = [temp.time]
+
+                                if temp.temp_basal_type:
+                                    parts.append(temp.temp_basal_type)
+                                if temp.temp_basal_amount is not None:
+                                    parts.append(f"{temp.temp_basal_amount:.2f}U/h")
+                                if temp.temp_basal_duration:
+                                    parts.append(f"for {temp.temp_basal_duration}")
+                                if temp.preset_temp_basal_name:
+                                    parts.append(f"({temp.preset_temp_basal_name})")
+
+                                print(f"         {' - '.join(parts)}")
 
         if not has_data:
             print(f"     (no {period.lower()} boluses in last {days} days)")
