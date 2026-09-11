@@ -4,6 +4,7 @@ from nooa import Agent
 
 from dataclasses import dataclass
 from data_logger import summary_log_method
+from datetime import datetime
 
 @dataclass
 class GlucoseReading:
@@ -108,6 +109,138 @@ class GlucoseDataManager:
     def get_recent_trend(self, num_readings: int = 3) -> List[GlucoseReading]:
         """Get the most recent N readings for trend analysis."""
         return self.readings[-num_readings:] if self.readings else []
+
+    def categorize_time_period(self, time_str: str) -> str:
+        """
+        Categorize a time string into one of 5 periods.
+
+        Args:
+            time_str: Time in HH:MM:SS format (24-hour)
+
+        Returns:
+            Period name: 'Breakfast', 'Lunch', 'Snack', 'Dinner', or 'Night'
+        """
+        try:
+            # Parse time (assuming format HH:MM:SS)
+            time_obj = datetime.strptime(time_str, "%H:%M:%S").time()
+            hour = time_obj.hour
+            minute = time_obj.minute
+
+            # Convert to total minutes for easier comparison
+            total_minutes = hour * 60 + minute
+
+            # Define periods in minutes from midnight
+            # Breakfast: 06:00 - 11:00 (360 - 660 minutes)
+            if 360 <= total_minutes < 660:
+                return "Breakfast"
+            # Lunch: 11:00 - 15:00 (660 - 900 minutes)
+            elif 660 <= total_minutes < 900:
+                return "Lunch"
+            # Snack: 15:00 - 18:00 (900 - 1080 minutes)
+            elif 900 <= total_minutes < 1080:
+                return "Snack"
+            # Dinner: 18:00 - 21:00 (1080 - 1260 minutes)
+            elif 1080 <= total_minutes < 1260:
+                return "Dinner"
+            # Night: 21:00 - 06:00 (1260+ minutes or 0-360 minutes)
+            else:
+                return "Night"
+
+        except ValueError:
+            # If parsing fails, return Night as default
+            return "Night"
+
+    @summary_log_method()
+    def organize_bolus_by_periods(self, bolus_events) -> Dict[str, Dict[str, List]]:
+        """
+        Organize bolus events by date and time period.
+
+        Args:
+            bolus_events: List of BolusEvent objects
+
+        Returns:
+            Dict with structure: {date: {period: [bolus_events]}}
+        """
+        organized = {}
+
+        for event in bolus_events:
+            date = event.date
+            period = self.categorize_time_period(event.time)
+
+            # Initialize date if not exists
+            if date not in organized:
+                organized[date] = {
+                    "Breakfast": [],
+                    "Lunch": [],
+                    "Snack": [],
+                    "Dinner": [],
+                    "Night": []
+                }
+
+            # Add event to appropriate period
+            organized[date][period].append(event)
+
+        return organized
+
+    @summary_log_method()
+    def get_bolus_for_period(self, bolus_events, period_name: str, days: int = 7) -> Dict[str, List]:
+        """
+        Get bolus events for a specific time period across multiple days.
+
+        Args:
+            bolus_events: List of BolusEvent objects
+            period_name: One of 'Breakfast', 'Lunch', 'Snack', 'Dinner', 'Night'
+            days: Number of days to include
+
+        Returns:
+            Dict with structure: {date: [bolus_events]}
+        """
+        # First organize all bolus events
+        organized = self.organize_bolus_by_periods(bolus_events)
+
+        # Filter for just the requested period
+        period_data = {}
+        for date, periods in organized.items():
+            if period_name in periods:
+                events = periods[period_name]
+                period_data[date] = events
+
+        # Limit to requested number of days (most recent)
+        sorted_dates = sorted(period_data.keys(), reverse=True)  # Most recent first
+        limited_dates = sorted_dates[:days]
+
+        # Return only the limited dates, in chronological order
+        result = {}
+        for date in sorted(limited_dates):
+            result[date] = period_data[date]
+
+        return result
+
+    @summary_log_method()
+    def get_all_periods_for_days(self, bolus_events, days: int = 7) -> Dict[str, Dict[str, List]]:
+        """
+        Get bolus events for all periods across multiple days.
+
+        Args:
+            bolus_events: List of BolusEvent objects
+            days: Number of days to include
+
+        Returns:
+            Dict with structure: {date: {period: [bolus_events]}}
+        """
+        # Organize all bolus events
+        organized = self.organize_bolus_by_periods(bolus_events)
+
+        # Limit to requested number of days (most recent)
+        sorted_dates = sorted(organized.keys(), reverse=True)  # Most recent first
+        limited_dates = sorted_dates[:days]
+
+        # Return only the limited dates, in chronological order
+        result = {}
+        for date in sorted(limited_dates):
+            result[date] = organized[date]
+
+        return result
 
 
 class DiabetesAgent(GlucoseDataManager, Agent):

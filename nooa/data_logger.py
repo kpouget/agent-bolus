@@ -47,7 +47,7 @@ def summary_log_method():
                     method += ", "
 
             if kwargs:
-                method += ", ".join([f"{k}={v}" for k, v in kwargs.items])
+                method += ", ".join([f"{k}={v}" for k, v in kwargs.items()])
 
             method += ")"
 
