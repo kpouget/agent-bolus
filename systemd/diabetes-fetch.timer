@@ -1,6 +1,5 @@
 [Unit]
 Description=Diabetes Data Fetch Timer (6am and 6pm daily)
-Documentation=file:///home/kpouget/vayrac/git/agent-bolus/scripts/fetch_diabetes_data.py
 Requires=diabetes-fetch.service
 
 [Timer]

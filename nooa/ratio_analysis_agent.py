@@ -157,6 +157,17 @@ class RatioAnalysisAgent(DiabetesAgent):
 
         return period_analysis
 
+    def _get_period_prefix(self, period_name: str) -> str:
+        """Get numeric prefix for period to ensure proper file ordering."""
+        period_prefixes = {
+            "breakfast": "0",
+            "lunch": "1",
+            "snack": "2",
+            "dinner": "3",
+            "night": "4"
+        }
+        return period_prefixes.get(period_name.lower(), "9")
+
     @summary_log_method()
     def save_period_analysis(self, period_analysis_data: Dict[str, Any], output_dir: str = "output") -> str:
         """
@@ -169,16 +180,17 @@ class RatioAnalysisAgent(DiabetesAgent):
         Returns:
             Path to saved file
         """
-        # Create output directory structure
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Generate filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Create output directory structure with period subdirectory
         period_name = period_analysis_data.get("period_name", "unknown")
         days_analyzed = period_analysis_data.get("days_analyzed", 0)
 
-        filename = f"{period_name.lower()}_{days_analyzed}days_{timestamp}.yaml"
-        filepath = os.path.join(output_dir, filename)
+        # Create period subdirectory with numeric prefix
+        prefix = self._get_period_prefix(period_name)
+        period_dir = os.path.join(output_dir, f"{prefix}_{period_name.lower()}")
+        os.makedirs(period_dir, exist_ok=True)
+
+        filename = f"{days_analyzed}days.yaml"
+        filepath = os.path.join(period_dir, filename)
 
         # Add metadata
         save_data = {
@@ -210,16 +222,15 @@ class RatioAnalysisAgent(DiabetesAgent):
         Returns:
             Path to saved plot data file
         """
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Generate filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Create period-specific subdirectory for YAML files
         period_name = period_analysis_data.get("period_name", "unknown")
         days_analyzed = len(period_analysis_data.get("days_data", []))
 
-        filename = f"{period_name.lower()}_plot_data_{days_analyzed}days_{timestamp}.yaml"
-        filepath = os.path.join(output_dir, filename)
+        period_dir = os.path.join(output_dir, period_name.lower())
+        os.makedirs(period_dir, exist_ok=True)
+
+        filename = "plot_data.yaml"
+        filepath = os.path.join(period_dir, filename)
 
         # Organize data for plotting
         plot_data = {
@@ -309,14 +320,14 @@ class RatioAnalysisAgent(DiabetesAgent):
         Returns:
             Path to saved detailed BG file
         """
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
-
+        # Create period-specific subdirectory for YAML files
         period_name = period_analysis_data.get("period_name", "unknown")
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        filename = f"{period_name.lower()}_bg_detailed_{timestamp}.yaml"
-        bg_filepath = os.path.join(output_dir, filename)
+        period_dir = os.path.join(output_dir, period_name.lower())
+        os.makedirs(period_dir, exist_ok=True)
+
+        filename = "bg_detailed.yaml"
+        bg_filepath = os.path.join(period_dir, filename)
 
         # Re-extract BG data with individual readings
         all_periods_data = {}
@@ -375,7 +386,7 @@ class RatioAnalysisAgent(DiabetesAgent):
         return bg_filepath
 
     @summary_log_method()
-    def save_llm_analysis(self, period_name: str, llm_analysis: str, output_dir: str = "output") -> str:
+    def save_llm_analysis(self, period_name: str, llm_analysis: str, output_dir: str = "output", processing_duration: float = None) -> str:
         """
         Save LLM analysis results to output directory.
 
@@ -387,17 +398,23 @@ class RatioAnalysisAgent(DiabetesAgent):
         Returns:
             Path to saved file
         """
-        os.makedirs(output_dir, exist_ok=True)
+        # Create period-specific subdirectory
+        period_dir = os.path.join(output_dir, period_name.lower())
+        os.makedirs(period_dir, exist_ok=True)
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{period_name.lower()}_llm_analysis_{timestamp}.md"
-        filepath = os.path.join(output_dir, filename)
+        filename = "llm_analysis.md"
+        filepath = os.path.join(period_dir, filename)
 
-        # Save as Markdown for readability
+        # Save as Markdown for readability with optional duration
+        duration_info = ""
+        if processing_duration is not None:
+            duration_info = f"**Durée d'exécution:** {processing_duration:.1f} secondes\n"
+
         content = f"""# Analyse du Ratio I:C - {period_name}
 
 **Généré le:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 **Période:** {period_name}
+{duration_info}
 
 ## Analyse Clinique
 
@@ -413,7 +430,7 @@ class RatioAnalysisAgent(DiabetesAgent):
         return filepath
 
     @summary_log_method()
-    async def analyze_all_periods_and_save(self, filepath: str, days_back: int = 7, output_dir: str = "output") -> Dict[str, Any]:
+    async def analyze_all_periods_and_save(self, filepath: str, days_back: int = 7, output_dir: str = "output", target_periods: list = None) -> Dict[str, Any]:
         """
         Analyze all periods and save results to output directory.
 
@@ -421,11 +438,20 @@ class RatioAnalysisAgent(DiabetesAgent):
             filepath: Path to Carelink CSV file
             days_back: Number of days to analyze
             output_dir: Output directory for results
+            target_periods: Optional list of specific periods to analyze (e.g., ["breakfast", "lunch"])
 
         Returns:
             Summary of analysis and saved files
         """
-        periods = ["Breakfast", "Lunch", "Snack", "Dinner", "Night"]
+        all_periods = ["Breakfast", "Lunch", "Snack", "Dinner", "Night"]
+
+        # Filter periods if specific ones are requested
+        if target_periods:
+            periods = [p for p in all_periods if p.lower() in [t.lower() for t in target_periods]]
+            if not periods:
+                raise ValueError(f"No valid periods found in {target_periods}")
+        else:
+            periods = all_periods
         results = {
             "analysis_timestamp": datetime.now().isoformat(),
             "periods_analyzed": [],
@@ -433,7 +459,10 @@ class RatioAnalysisAgent(DiabetesAgent):
             "summary": {}
         }
 
-        print(f"🧪 Analyzing all periods over last {days_back} days...")
+        if target_periods:
+            print(f"🧪 Analyzing {len(periods)} specific periods over last {days_back} days: {', '.join(periods)}")
+        else:
+            print(f"🧪 Analyzing all {len(periods)} periods over last {days_back} days...")
         print(f"📁 Saving results to: {output_dir}/")
 
         for period_name in periods:
@@ -466,14 +495,17 @@ class RatioAnalysisAgent(DiabetesAgent):
                 bg_file = self.save_detailed_bg_data(period_data, filepath, output_dir)
                 print(f"   🩸 BG detail saved: {os.path.basename(bg_file)}")
 
-                # Get LLM analysis in French
+                # Get LLM analysis in French with timing
                 print(f"   🧠 Analyse LLM en français...")
+                llm_start_time = datetime.now()
                 llm_analysis = await self.analyze_ic_ratio_effectiveness_fr(period_data)
+                llm_end_time = datetime.now()
+                llm_duration = (llm_end_time - llm_start_time).total_seconds()
 
                 if llm_analysis and len(str(llm_analysis).strip()) > 50:
-                    # Save LLM analysis in French
-                    analysis_file = self.save_llm_analysis(period_name, llm_analysis, output_dir)
-                    print(f"   📝 Analyse sauvegardée: {os.path.basename(analysis_file)}")
+                    # Save LLM analysis in French with processing duration
+                    analysis_file = self.save_llm_analysis(period_name, llm_analysis, output_dir, processing_duration=llm_duration)
+                    print(f"   📝 Analyse sauvegardée: {os.path.basename(analysis_file)} (durée: {llm_duration:.1f}s)")
 
                     results["saved_files"].extend([data_file, plot_file, bg_file, analysis_file])
                 else:
@@ -891,9 +923,11 @@ class RatioAnalysisAgent(DiabetesAgent):
         Vous êtes un expert en gestion du diabète. Examinez les données d'analyse de période et fournissez des recommandations spécifiques pour le ratio I:C.
 
         Les données period_analysis_data contiennent des patterns cliniques détectés selon ces critères :
-        - Pattern bolus insuffisant : Bolus de correction nécessaires = ratio I:C trop élevé (besoin de plus d'insuline)
+        - Pattern bolus insuffisant : Bolus de correction automatiques nécessaires par la pompe en boucle fermée = ratio I:C trop élevé (besoin de plus d'insuline)
         - Pattern bolus excessif : Basale suspendue + glucose sous 80 = ratio I:C trop bas (besoin de moins d'insuline)
         - Changements historiques : Apprenez des ajustements précédents
+
+        IMPORTANT : Les "bolus de correction" sont automatiquement administrés par la pompe en boucle fermée (système automatique), pas par l'utilisateur. Ils indiquent que le bolus de repas initial était insuffisant.
 
         Fournissez une évaluation claire et des recommandations d'ajustement spécifiques avec une justification clinique.
         Soyez conservateur - les petits changements sont plus sûrs. Considérez la sécurité pour éviter l'hypoglycémie.

@@ -12,7 +12,7 @@ import datetime
 from typing import Dict, Any
 
 # Add the carelink-python-client directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "carelink-python-client"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "carelink-python-client"))
 
 try:
     import carelink_client2
@@ -39,7 +39,7 @@ class CarelinkMcpServer:
         try:
             # Change to carelink-python-client directory where logindata.json is located
             original_cwd = os.getcwd()
-            carelink_dir = os.path.join(os.path.dirname(__file__), "carelink-python-client")
+            carelink_dir = os.path.join(os.path.dirname(__file__), "..", "carelink-python-client")
             os.chdir(carelink_dir)
 
             # Create client instance
@@ -118,7 +118,7 @@ class CarelinkMcpServer:
         try:
             # Change to carelink-python-client directory where logindata.json is located
             original_cwd = os.getcwd()
-            carelink_dir = os.path.join(os.path.dirname(__file__), "carelink-python-client")
+            carelink_dir = os.path.join(os.path.dirname(__file__), "..", "carelink-python-client")
             os.chdir(carelink_dir)
 
             try:
@@ -157,7 +157,7 @@ class CarelinkMcpServer:
         try:
             # Change to carelink-python-client directory where logindata.json is located
             original_cwd = os.getcwd()
-            carelink_dir = os.path.join(os.path.dirname(__file__), "carelink-python-client")
+            carelink_dir = os.path.join(os.path.dirname(__file__), "..", "carelink-python-client")
             os.chdir(carelink_dir)
 
             try:
@@ -221,7 +221,7 @@ class CarelinkMcpServer:
         try:
             # Change to carelink-python-client directory where logindata.json is located
             original_cwd = os.getcwd()
-            carelink_dir = os.path.join(os.path.dirname(__file__), "carelink-python-client")
+            carelink_dir = os.path.join(os.path.dirname(__file__), "..", "carelink-python-client")
             os.chdir(carelink_dir)
 
             try:

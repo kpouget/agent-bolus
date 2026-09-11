@@ -1,0 +1,19 @@
+[Unit]
+Description=Diabetes NOOA Review Timer (7pm daily)
+Requires=diabetes-review.service
+
+[Timer]
+# Run daily at 7pm
+OnCalendar=*-*-* 19:00:00
+
+# If system was down, run missed timer within 15 minutes of boot
+Persistent=true
+
+# Add some randomization to avoid load spikes (±3 minutes)
+RandomizedDelaySec=180
+
+# Prevent multiple instances from running simultaneously
+Unit=diabetes-review.service
+
+[Install]
+WantedBy=timers.target

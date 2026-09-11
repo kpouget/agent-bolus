@@ -1,12 +1,12 @@
 [Unit]
-Description=Diabetes Data Fetch from Carelink
+Description=Diabetes NOOA Bolus Review
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 WorkingDirectory=/home/kpouget/vayrac/git/agent-bolus
-ExecStart=/usr/bin/uv run scripts/fetch_diabetes_data.py
+ExecStart=/usr/bin/uv run scripts/nooa_bolus_review.py
 
 # Logging
 StandardOutput=journal
@@ -14,8 +14,8 @@ StandardError=journal
 
 # Security and resource limits
 PrivateNetwork=false
-MemoryMax=1G
-TimeoutSec=900
+MemoryMax=2G
+TimeoutSec=1800
 Restart=no
 
 # Environment file (optional - loads .env if present)

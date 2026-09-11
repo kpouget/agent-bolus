@@ -1,2 +1,5 @@
+.env
 data/*
 output/*
+generated/*
+carelink-python-client/logindata.json

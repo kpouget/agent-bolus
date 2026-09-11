@@ -13,7 +13,7 @@ import logging
 
 # Create a logger specific to this module
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
 
 # Add console handler if not already added
 if not logger.handlers:
@@ -38,7 +38,7 @@ def summary_log_method():
             # Prepare minimal log entry
             log_entry = {
                 "timestamp": datetime.datetime.now().isoformat(),
-                "method": None,
+                "method": func.__name__,
                 "inputs": {},
             }
 
