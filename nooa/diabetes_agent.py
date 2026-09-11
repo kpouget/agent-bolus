@@ -3,6 +3,7 @@ from typing import List, Dict, Optional
 from nooa import Agent
 
 from dataclasses import dataclass
+from data_logger import summary_log_method
 
 @dataclass
 class GlucoseReading:
@@ -30,26 +31,31 @@ class GlucoseDataManager:
         self.readings: List[GlucoseReading] = []
         self.patient_id: str = patient_id
 
+    @summary_log_method()
     def add_reading(self, timestamp: str, value: int, reading_type: str = "sensor") -> int:
         """Add a glucose reading to our dataset."""
         reading = GlucoseReading(timestamp, value, reading_type)
         self.readings.append(reading)
         return len(self.readings)
 
+    @summary_log_method()
     def get_average_glucose(self) -> float:
         """Calculate average glucose from stored readings."""
         if not self.readings:
             return 0.0
         return sum(r.value for r in self.readings) / len(self.readings)
 
+    @summary_log_method()
     def get_reading_count(self) -> int:
         """Get total number of stored readings."""
         return len(self.readings)
 
+    @summary_log_method()
     def clear_readings(self):
         """Clear all stored readings."""
         self.readings = []
 
+    @summary_log_method()
     def get_readings_summary(self) -> Dict[str, any]:
         """Get summary statistics of stored readings."""
         if not self.readings:
@@ -65,18 +71,22 @@ class GlucoseDataManager:
             "meter_count": len([r for r in self.readings if r.type == "bg_meter"])
         }
 
+    @summary_log_method()
     def get_readings_in_range(self, min_value: int = 70, max_value: int = 180) -> List[GlucoseReading]:
         """Get readings within target range (default: 70-180 mg/dL)."""
         return [r for r in self.readings if min_value <= r.value <= max_value]
 
+    @summary_log_method()
     def get_high_readings(self, threshold: int = 180) -> List[GlucoseReading]:
         """Get readings above threshold (default: >180 mg/dL)."""
         return [r for r in self.readings if r.value > threshold]
 
+    @summary_log_method()
     def get_low_readings(self, threshold: int = 70) -> List[GlucoseReading]:
         """Get readings below threshold (default: <70 mg/dL)."""
         return [r for r in self.readings if r.value < threshold]
 
+    @summary_log_method()
     def calculate_time_in_range(self, target_min: int = 70, target_max: int = 180) -> TimeInRangeData:
         """Calculate Time-in-Range statistics."""
         if not self.readings:
@@ -94,6 +104,7 @@ class GlucoseDataManager:
             period_days=1  # Assuming daily data for now
         )
 
+    @summary_log_method()
     def get_recent_trend(self, num_readings: int = 3) -> List[GlucoseReading]:
         """Get the most recent N readings for trend analysis."""
         return self.readings[-num_readings:] if self.readings else []
