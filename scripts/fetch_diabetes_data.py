@@ -68,12 +68,179 @@ def check_token_expiry(status):
     except Exception as e:
         return True, f"Error checking token: {e}"
 
+def get_latest_glucose_from_csv(csv_file_path):
+    """Extract the latest glucose reading from the CSV file."""
+    try:
+        import csv
+        from datetime import datetime
+
+        latest_glucose = None
+        latest_timestamp = None
+        latest_datetime = None
+
+        with open(csv_file_path, 'r', encoding='utf-8') as f:
+            # Read first few lines to understand structure
+            lines = []
+            for i in range(5):  # Read first 5 lines
+                try:
+                    line = f.readline().strip()
+                    if line:
+                        lines.append(line)
+                        print(f"   📋 Line {i+1}: {line[:100]}{'...' if len(line) > 100 else ''}")
+                except:
+                    break
+
+            f.seek(0)  # Reset to beginning
+
+            # Detect delimiter from first line with data
+            delimiter = ';' if any(';' in line for line in lines) else ','
+            print(f"   🔧 Using delimiter: '{delimiter}'")
+
+            reader = csv.reader(f, delimiter=delimiter)
+
+            # Skip lines until we find the real header (should contain 'Index', 'Date', 'Time')
+            header = None
+            line_num = 0
+            for row in reader:
+                line_num += 1
+                print(f"   🔍 Row {line_num} has {len(row)} columns: {row[:5]}...")
+
+                # Look for the row that contains Index, Date, Time - that's our header
+                if len(row) > 10 and any('Index' in str(col) for col in row) and any('Date' in str(col) for col in row):
+                    header = row
+                    print(f"   ✅ Found header at row {line_num}: {len(header)} columns")
+                    break
+                elif line_num > 10:  # Don't search too far
+                    break
+
+            if header is None:
+                print(f"   ❌ Could not find proper header row!")
+                return "Erreur", "En-tête CSV non trouvé"
+
+            # Find sensor glucose column - be more flexible with column names
+            sensor_col = None
+            date_col = None
+            time_col = None
+
+            # Debug: print available columns
+            print(f"   🔍 All column names:")
+            for i, col in enumerate(header):
+                if i < 20 or 'glucose' in col.lower() or 'sensor' in col.lower():
+                    print(f"      [{i:2d}] {col}")
+            if len(header) > 20:
+                print(f"      ... and {len(header)-20} more columns")
+
+            for i, col_name in enumerate(header):
+                col_clean = col_name.strip()
+                col_lower = col_clean.lower()
+
+                # Look for exact matches first, then patterns
+                if col_clean == 'Sensor Glucose (mg/dL)':
+                    sensor_col = i
+                    print(f"   📊 Found sensor column {i}: {col_name}")
+                elif col_clean == 'Date' and date_col is None:
+                    date_col = i
+                    print(f"   📅 Found date column {i}: {col_name}")
+                elif col_clean == 'Time' and time_col is None:
+                    time_col = i
+                    print(f"   ⏰ Found time column {i}: {col_name}")
+                # Fallback patterns if exact matches don't work
+                elif sensor_col is None and ('sensor' in col_lower and 'glucose' in col_lower):
+                    sensor_col = i
+                    print(f"   📊 Found sensor column {i}: {col_name} (pattern match)")
+                elif date_col is None and col_lower == 'date':
+                    date_col = i
+                    print(f"   📅 Found date column {i}: {col_name} (pattern match)")
+                elif time_col is None and col_lower == 'time':
+                    time_col = i
+                    print(f"   ⏰ Found time column {i}: {col_name} (pattern match)")
+
+            if sensor_col is None or date_col is None or time_col is None:
+                return "Non disponible", "Colonnes non trouvées"
+
+            # Read all rows to find the latest sensor reading
+            row_count = 0
+            glucose_rows_found = 0
+            valid_glucose_values = 0
+
+            print(f"   📊 Reading data rows (Date col={date_col}, Time col={time_col}, Glucose col={sensor_col})...")
+
+            for row in reader:
+                row_count += 1
+
+                if len(row) <= max(sensor_col, date_col, time_col):
+                    continue
+
+                glucose_value = row[sensor_col].strip()
+                date_value = row[date_col].strip()
+                time_value = row[time_col].strip()
+
+                glucose_rows_found += 1
+
+                # Debug first few glucose entries
+                if glucose_rows_found <= 5:
+                    print(f"   🔍 Row {glucose_rows_found}: Date='{date_value}' Time='{time_value}' Glucose='{glucose_value}'")
+
+                # Skip empty glucose readings
+                if not glucose_value or glucose_value == '' or glucose_value == 'N/A':
+                    continue
+
+                valid_glucose_values += 1
+
+                try:
+                    # Parse the timestamp - try multiple formats
+                    full_timestamp = f"{date_value} {time_value}"
+                    dt = None
+
+                    # Try different date formats
+                    for fmt in ["%Y/%m/%d %H:%M:%S", "%m/%d/%y %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%m/%d/%Y %H:%M:%S"]:
+                        try:
+                            dt = datetime.strptime(full_timestamp, fmt)
+                            break
+                        except:
+                            continue
+
+                    if dt is None:
+                        if valid_glucose_values <= 5:
+                            print(f"   ⚠️ Could not parse timestamp: '{full_timestamp}'")
+                        continue
+
+                    if latest_datetime is None or dt > latest_datetime:
+                        latest_datetime = dt
+                        latest_glucose = glucose_value
+                        latest_timestamp = dt.strftime("%Y-%m-%d at %H:%M:%S")
+
+                        # Debug when we find a new latest
+                        if valid_glucose_values <= 10:
+                            print(f"   🆕 New latest: {glucose_value} mg/dL at {dt}")
+
+                except Exception as e:
+                    if valid_glucose_values <= 5:
+                        print(f"   ⚠️ Unexpected error for '{full_timestamp}': {e}")
+                    continue
+
+            print(f"   📊 Processed {row_count} total rows, {glucose_rows_found} with data, {valid_glucose_values} with valid glucose")
+
+            if latest_glucose:
+                print(f"   🎯 Final result: {latest_glucose} at {latest_timestamp}")
+
+        if latest_glucose and latest_timestamp:
+            return f"{latest_glucose} mg/dL", latest_timestamp
+        else:
+            return "Non disponible", "Aucune lecture trouvée"
+
+    except Exception as e:
+        return "Erreur", f"Erreur de lecture: {e}"
+
 def generate_html_report(status, new_file, result):
     """Generate HTML report about the data fetch."""
     try:
         # Create generated directory if needed
         generated_dir = Path("generated")
         generated_dir.mkdir(exist_ok=True)
+
+        # Extract latest glucose reading from the CSV file
+        latest_glucose_value, latest_glucose_time = get_latest_glucose_from_csv(new_file)
 
         # Calculate token expiration info
         token_expires_at = "Unknown"
@@ -242,6 +409,21 @@ def generate_html_report(status, new_file, result):
             <div class="info-item">
                 <div class="label">🔢 Total Fetches</div>
                 <div class="value">{status.get('total_fetches', 0)}</div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 20px;">
+            <h3>🩸 Latest Glucose Reading</h3>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="label">📊 Glucose Value</div>
+                    <div class="value">{latest_glucose_value}</div>
+                </div>
+
+                <div class="info-item">
+                    <div class="label">⏰ Reading Time</div>
+                    <div class="value">{latest_glucose_time}</div>
+                </div>
             </div>
         </div>
 

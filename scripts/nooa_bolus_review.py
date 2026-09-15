@@ -248,6 +248,7 @@ async def run_bolus_review(target_periods=None):
             plot_data_files = list(period_dir.glob("insuline_data_7days.yml"))
             bg_detailed_files = list(period_dir.glob("bg_detailed.yaml"))
             llm_analysis_files = list(period_dir.glob("llm_analysis.md"))
+            conclusion_files = list(period_dir.glob("conclusion.md"))
             complete_data_files = list(period_dir.glob("bg_data_*days.yaml"))
 
             if not plot_data_files:
@@ -257,6 +258,9 @@ async def run_bolus_review(target_periods=None):
             # Files are already in the correct location, just report them
             for yaml_file in plot_data_files + bg_detailed_files + complete_data_files:
                 print(f"   📄 YAML found: {prefix}_{period_lower}/{yaml_file.name}")
+
+            for conclusion_file in conclusion_files:
+                print(f"   📄 Conclusion found: {prefix}_{period_lower}/{conclusion_file.name}")
 
             # Convert LLM analysis to HTML
             if llm_analysis_files:
@@ -288,18 +292,24 @@ async def run_bolus_review(target_periods=None):
         print(f"\n📋 Review Summary:")
         print(f"   📊 Periods analyzed: {len(results['periods_analyzed'])}")
 
-        # Count YAML files in period subdirectories
+        # Count files in period subdirectories
         total_yaml_files = 0
+        total_conclusion_files = 0
         for item in generated_dir.iterdir():
             if item.is_dir():
-                total_yaml_files += len(list(item.glob('*.yaml')))
+                total_yaml_files += len(list(item.glob('*.yaml'))) + len(list(item.glob('*.yml')))
+                total_conclusion_files += len(list(item.glob('conclusion.md')))
 
         print(f"   📁 YAML files: {total_yaml_files}")
+        print(f"   📄 Conclusion files: {total_conclusion_files}")
         print(f"   🌐 HTML files: {len(list(generated_dir.glob('*.html')))}")
+        print(f"   📧 Aggregated conclusions: {len(list(generated_dir.glob('all_conclusions.md')))}")
 
         print(f"\n📁 Output structure:")
         print(f"   📊 YAML data: generated/{timestamp}/[N_period]/ (per period)")
+        print(f"   📄 Conclusions: generated/{timestamp}/[N_period]/conclusion.md")
         print(f"   🌐 HTML reports: generated/{timestamp}/")
+        print(f"   📧 Email summary: generated/{timestamp}/all_conclusions.md")
 
         # Show period directories
         print(f"\n📂 Period directories created:")

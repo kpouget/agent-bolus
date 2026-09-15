@@ -396,7 +396,7 @@ class RatioAnalysisAgent(DiabetesAgent):
         return bg_filepath
 
     @summary_log_method()
-    def save_llm_analysis(self, period_name: str, llm_analysis: str, output_dir: str = "output", processing_duration: float = None) -> str:
+    def save_llm_analysis(self, period_name: str, llm_analysis: str, output_dir: str = "output", processing_duration: float = None, period_data: Dict[str, Any] = None) -> str:
         """
         Save LLM analysis results to output directory.
 
@@ -422,10 +422,17 @@ class RatioAnalysisAgent(DiabetesAgent):
         if processing_duration is not None:
             duration_info = f"**Durée d'exécution:** {processing_duration:.1f} secondes\n"
 
+        # Get latest sensor timestamp from the period data
+        if period_data:
+            latest_sensor_info = self.get_latest_sensor_timestamp(period_data)
+        else:
+            latest_sensor_info = "**Dernière glycémie capteur:** Non disponible"
+
         content = f"""# Analyse du Ratio I:C - {period_name}
 
 **Généré le:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 **Période:** {period_name}
+{latest_sensor_info}
 {duration_info}
 
 ## Analyse Clinique
@@ -440,6 +447,294 @@ class RatioAnalysisAgent(DiabetesAgent):
             f.write(content)
 
         return filepath
+
+    def get_latest_sensor_timestamp(self, period_analysis_data: Dict[str, Any]) -> str:
+        """
+        Extract the timestamp of the most recent sensor glucose reading.
+
+        Args:
+            period_analysis_data: Period analysis data
+
+        Returns:
+            Formatted timestamp string of most recent sensor reading
+        """
+        latest_timestamp = None
+        latest_datetime = None
+
+        # Look through all days to find the most recent sensor reading
+        for day_data in period_analysis_data.get("days_data", []):
+            bg_response = day_data.get("bg_response")
+            if not bg_response:
+                continue
+
+            # Check if we have time_window information
+            time_window = bg_response.get("time_window", "")
+            if time_window and "-" in time_window:
+                # Extract the end time (most recent)
+                try:
+                    date = day_data.get("date", "")
+                    end_time = time_window.split("-")[1]
+                    full_timestamp = f"{date} {end_time}"
+
+                    # Convert to datetime for comparison
+                    from datetime import datetime
+                    dt = datetime.strptime(full_timestamp, "%Y/%m/%d %H:%M:%S")
+
+                    if latest_datetime is None or dt > latest_datetime:
+                        latest_datetime = dt
+                        latest_timestamp = full_timestamp
+
+                except Exception as e:
+                    # Debug: print what failed
+                    print(f"   ⚠️  Failed to parse timestamp: {date} {end_time} - {e}")
+                    continue
+
+        # If we didn't find it in bg_response, try reading from the detailed BG data
+        if not latest_timestamp:
+            period_name = period_analysis_data.get("period_name", "")
+            try:
+                # Try to get the latest from the most recent day's data
+                days_data = period_analysis_data.get("days_data", [])
+                if days_data:
+                    # Get the most recent day (day_offset closest to 0, which is -1, -2, etc.)
+                    most_recent_day = max(days_data, key=lambda x: x.get("day_offset", -999))
+                    bg_response = most_recent_day.get("bg_response")
+                    if bg_response:
+                        time_window = bg_response.get("time_window", "")
+                        if time_window:
+                            # Extract just the latest time from this day
+                            date = most_recent_day.get("date", "")
+                            if "-" in time_window:
+                                end_time = time_window.split("-")[1].strip()
+                            else:
+                                end_time = time_window.strip()
+                            latest_timestamp = f"{date} {end_time}"
+                            print(f"   📍 Found sensor timestamp from most recent day: {latest_timestamp}")
+
+            except Exception as e:
+                print(f"   ⚠️  Fallback timestamp extraction failed: {e}")
+
+        if latest_timestamp:
+            return f"**Dernière glycémie capteur:** {latest_timestamp}"
+        else:
+            return "**Dernière glycémie capteur:** Non disponible"
+
+    def extract_conclusion_from_analysis(self, llm_analysis: str) -> str:
+        """
+        Extract the conclusion section from LLM analysis.
+
+        Args:
+            llm_analysis: Full LLM analysis text
+
+        Returns:
+            Extracted conclusion text
+        """
+        # Look for conclusion markers in French
+        conclusion_markers = [
+            "## Conclusion",
+            "## Recommandation",
+            "## Recommandations",
+            "## Synthèse",
+            "## Résumé",
+            "**Conclusion**",
+            "**Recommandation**"
+        ]
+
+        lines = llm_analysis.split('\n')
+        conclusion_lines = []
+        in_conclusion = False
+
+        for line in lines:
+            # Check if we're entering a conclusion section
+            for marker in conclusion_markers:
+                if marker.lower() in line.lower():
+                    in_conclusion = True
+                    conclusion_lines.append(line)
+                    break
+            else:
+                # If we're in conclusion and hit another ## header, stop
+                if in_conclusion and line.strip().startswith('## ') and not any(marker.lower() in line.lower() for marker in conclusion_markers):
+                    break
+                elif in_conclusion:
+                    conclusion_lines.append(line)
+
+        # If no specific conclusion section found, take the last paragraph
+        if not conclusion_lines:
+            paragraphs = [p.strip() for p in llm_analysis.split('\n\n') if p.strip()]
+            if paragraphs:
+                conclusion_lines = paragraphs[-1].split('\n')
+
+        conclusion = '\n'.join(conclusion_lines).strip()
+
+        # If still empty, create a summary line
+        if not conclusion:
+            conclusion = "Analyse terminée - voir le rapport complet pour les détails."
+
+        return conclusion
+
+    @summary_log_method()
+    def save_conclusion(self, period_name: str, conclusion_text: str, output_dir: str = "output", period_data: Dict[str, Any] = None) -> str:
+        """
+        Save period conclusion to a dedicated file.
+
+        Args:
+            period_name: Name of the period
+            conclusion_text: Extracted conclusion
+            output_dir: Output directory
+
+        Returns:
+            Path to saved conclusion file
+        """
+        # Create period subdirectory with numeric prefix
+        prefix = self._get_period_prefix(period_name)
+        period_dir = os.path.join(output_dir, f"{prefix}_{period_name.lower()}")
+        os.makedirs(period_dir, exist_ok=True)
+
+        filename = "conclusion.md"
+        filepath = os.path.join(period_dir, filename)
+
+        # Get latest sensor timestamp
+        if period_data:
+            latest_sensor_info = self.get_latest_sensor_timestamp(period_data)
+        else:
+            latest_sensor_info = "**Dernière glycémie capteur:** Non disponible"
+
+        # Save conclusion with metadata
+        content = f"""# Conclusion - {period_name}
+
+**Généré le:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+**Période:** {period_name}
+{latest_sensor_info}
+
+{conclusion_text}
+"""
+
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        return filepath
+
+    @summary_log_method()
+    def aggregate_all_conclusions(self, output_dir: str, periods_analyzed: list) -> str:
+        """
+        Create a single file with all period conclusions.
+
+        Args:
+            output_dir: Base output directory
+            periods_analyzed: List of periods that were analyzed
+
+        Returns:
+            Path to aggregated conclusions file
+        """
+        filename = "all_conclusions.md"
+        filepath = os.path.join(output_dir, filename)
+
+        content = f"""# Analyse des Ratios I:C - Toutes les Périodes
+
+**Généré le:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+**Périodes analysées:** {', '.join(periods_analyzed)}
+
+---
+
+"""
+
+        # Collect conclusions from each period
+        for period_name in periods_analyzed:
+            prefix = self._get_period_prefix(period_name)
+            period_dir = os.path.join(output_dir, f"{prefix}_{period_name.lower()}")
+            conclusion_file = os.path.join(period_dir, "conclusion.md")
+
+            if os.path.exists(conclusion_file):
+                try:
+                    with open(conclusion_file, 'r', encoding='utf-8') as f:
+                        conclusion_content = f.read()
+
+                    # Extract just the conclusion text (skip metadata)
+                    lines = conclusion_content.split('\n')
+                    content_start = False
+                    period_conclusion = []
+
+                    for line in lines:
+                        if content_start:
+                            period_conclusion.append(line)
+                        elif line.strip() == "":
+                            content_start = True
+
+                    if period_conclusion:
+                        content += f"## {period_name}\n\n"
+                        content += '\n'.join(period_conclusion).strip()
+                        content += "\n\n---\n\n"
+
+                except Exception as e:
+                    content += f"## {period_name}\n\nErreur lors de la lecture de la conclusion: {e}\n\n---\n\n"
+            else:
+                content += f"## {period_name}\n\nAucune conclusion disponible.\n\n---\n\n"
+
+        content += f"""
+*Rapport généré automatiquement par RatioAnalysisAgent*
+*Prêt pour envoi par email*
+"""
+
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        return filepath
+
+    def get_historical_conclusions(self, period_name: str, base_output_dir: str = "generated", days_back: int = 7) -> str:
+        """
+        Retrieve historical conclusions for a given period from previous analyses.
+
+        Args:
+            period_name: Name of the period to get history for
+            base_output_dir: Base directory where previous analyses are stored
+            days_back: How many days back to look for conclusions
+
+        Returns:
+            Formatted string with historical conclusions
+        """
+        if not os.path.exists(base_output_dir):
+            return ""
+
+        historical_conclusions = []
+        prefix = self._get_period_prefix(period_name)
+
+        # Look through timestamped directories (YYMMDD_HHMM format)
+        try:
+            for dir_name in sorted(os.listdir(base_output_dir), reverse=True)[:days_back]:
+                dir_path = os.path.join(base_output_dir, dir_name)
+                if not os.path.isdir(dir_path):
+                    continue
+
+                period_dir = os.path.join(dir_path, f"{prefix}_{period_name.lower()}")
+                conclusion_file = os.path.join(period_dir, "conclusion.md")
+
+                if os.path.exists(conclusion_file):
+                    try:
+                        with open(conclusion_file, 'r', encoding='utf-8') as f:
+                            conclusion_content = f.read()
+
+                        # Extract the conclusion text
+                        lines = conclusion_content.split('\n')
+                        for i, line in enumerate(lines):
+                            if line.startswith('**Généré le:**'):
+                                date_info = line.replace('**Généré le:**', '').strip()
+                                # Find the actual conclusion text (skip headers)
+                                conclusion_start = i + 3  # Skip date, period, empty line
+                                conclusion_text = '\n'.join(lines[conclusion_start:]).strip()
+                                if conclusion_text:
+                                    historical_conclusions.append(f"**{date_info}:** {conclusion_text}")
+                                break
+
+                    except Exception:
+                        continue
+
+        except Exception:
+            pass
+
+        if historical_conclusions:
+            return "\n\n### Conclusions des Analyses Précédentes:\n\n" + "\n\n".join(historical_conclusions[:3])  # Limit to 3 most recent
+        else:
+            return ""
 
     @summary_log_method()
     async def analyze_all_periods_and_save(self, filepath: str, days_back: int = 7, output_dir: str = "output", target_periods: list = None) -> Dict[str, Any]:
@@ -510,16 +805,21 @@ class RatioAnalysisAgent(DiabetesAgent):
                 # Get LLM analysis in French with timing
                 print(f"   🧠 Analyse LLM en français...")
                 llm_start_time = datetime.now()
-                llm_analysis = await self.analyze_ic_ratio_effectiveness_fr(period_data)
+                llm_analysis = await self.analyze_ic_ratio_effectiveness_fr(period_data, output_dir)
                 llm_end_time = datetime.now()
                 llm_duration = (llm_end_time - llm_start_time).total_seconds()
 
                 if llm_analysis and len(str(llm_analysis).strip()) > 50:
                     # Save LLM analysis in French with processing duration
-                    analysis_file = self.save_llm_analysis(period_name, llm_analysis, output_dir, processing_duration=llm_duration)
+                    analysis_file = self.save_llm_analysis(period_name, llm_analysis, output_dir, processing_duration=llm_duration, period_data=period_data)
                     print(f"   📝 Analyse sauvegardée: {os.path.basename(analysis_file)} (durée: {llm_duration:.1f}s)")
 
-                    results["saved_files"].extend([data_file, plot_file, bg_file, analysis_file])
+                    # Extract and save conclusion
+                    conclusion_text = self.extract_conclusion_from_analysis(llm_analysis)
+                    conclusion_file = self.save_conclusion(period_name, conclusion_text, output_dir, period_data=period_data)
+                    print(f"   📄 Conclusion sauvegardée: {os.path.basename(conclusion_file)}")
+
+                    results["saved_files"].extend([data_file, plot_file, bg_file, analysis_file, conclusion_file])
                 else:
                     print(f"   ⚠️  LLM analysis was empty or failed")
                     results["saved_files"].extend([data_file, plot_file, bg_file])
@@ -537,6 +837,8 @@ class RatioAnalysisAgent(DiabetesAgent):
 
             except Exception as e:
                 print(f"   ❌ Error analyzing {period_name}: {e}")
+                import traceback
+                traceback.print_exc()
 
         # Save summary
         summary_file = os.path.join(output_dir, f"analysis_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.yaml")
@@ -544,6 +846,14 @@ class RatioAnalysisAgent(DiabetesAgent):
             yaml.dump(results, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
         results["saved_files"].append(summary_file)
+
+        # Generate aggregated conclusions file
+        if results["periods_analyzed"]:
+            print(f"\n📋 Generating aggregated conclusions...")
+            conclusions_file = self.aggregate_all_conclusions(output_dir, results["periods_analyzed"])
+            results["saved_files"].append(conclusions_file)
+            print(f"   📧 All conclusions: {os.path.basename(conclusions_file)} (ready for email)")
+
         print(f"\n✅ Analysis complete! {len(results['periods_analyzed'])} periods analyzed")
         print(f"📁 {len(results['saved_files'])} files saved to {output_dir}/")
 
@@ -928,7 +1238,7 @@ class RatioAnalysisAgent(DiabetesAgent):
         """
         ...
 
-    async def analyze_ic_ratio_effectiveness_fr(self, period_analysis_data: Dict[str, Any]) -> str:
+    async def analyze_ic_ratio_effectiveness_fr(self, period_analysis_data: Dict[str, Any], base_output_dir: str = "generated") -> str:
         """
         Analysez l'efficacité du ratio I:C pour une période spécifique sur plusieurs jours.
 
@@ -946,6 +1256,62 @@ class RatioAnalysisAgent(DiabetesAgent):
 
         **Répondez entièrement en français.**
         """
+        # Get historical conclusions for context
+        period_name = period_analysis_data.get('period_name', '')
+        historical_context = self.get_historical_conclusions(period_name, base_output_dir)
+
+        # Prepare analysis data with error handling
+        try:
+            pattern_analysis = await self.identify_ic_ratio_patterns(period_analysis_data)
+            if pattern_analysis is None:
+                pattern_analysis = "Erreur lors de l'analyse des patterns."
+        except Exception as e:
+            pattern_analysis = f"Erreur lors de l'analyse des patterns: {e}"
+
+        try:
+            adjustment_context = self.calculate_adjustment_context(period_analysis_data)
+            if adjustment_context is None:
+                adjustment_context = "Erreur lors du calcul du contexte d'ajustement."
+        except Exception as e:
+            adjustment_context = f"Erreur lors du calcul du contexte: {e}"
+
+        # Create a comprehensive analysis prompt
+        pattern_analysis = await self.identify_ic_ratio_patterns(period_analysis_data)
+        adjustment_context = self.calculate_adjustment_context(period_analysis_data)
+
+        # For now, return a structured analysis (NOOA framework will handle LLM generation via method docstrings)
+        return await self.perform_ic_ratio_analysis_fr(
+            period_name=period_name,
+            pattern_analysis=pattern_analysis,
+            adjustment_context=adjustment_context,
+            historical_context=historical_context
+        )
+
+    async def perform_ic_ratio_analysis_fr(self, period_name: str, pattern_analysis: str, adjustment_context: str, historical_context: str) -> str:
+        """
+        Analysez l'efficacité du ratio I:C pour la période spécifique sur plusieurs jours.
+
+        Vous êtes un expert en gestion du diabète. Examinez les données d'analyse de période et fournissez des recommandations spécifiques pour le ratio I:C.
+
+        Les données contiennent des patterns cliniques détectés selon ces critères :
+        - Pattern bolus insuffisant : Bolus de correction automatiques nécessaires par la pompe en boucle fermée = ratio I:C trop élevé (besoin de plus d'insuline)
+        - Pattern bolus excessif : Basale suspendue + glucose sous 80 = ratio I:C trop bas (besoin de moins d'insuline)
+        - Changements historiques : Apprenez des ajustements précédents
+
+        IMPORTANT : Les "bolus de correction" sont automatiquement administrés par la pompe en boucle fermée (système automatique), pas par l'utilisateur. Ils indiquent que le bolus de repas initial était insuffisant.
+
+        Fournissez une analyse complète incluant:
+        1. Évaluation des patterns détectés
+        2. Recommandations spécifiques d'ajustement du ratio I:C
+        3. Justification clinique
+        4. Considérations de sécurité
+
+        Terminez votre analyse par une section "## Conclusion" avec vos recommandations principales.
+
+        Utilisez les données d'analyse fournies et le contexte historique pour votre analyse.
+
+        **Répondez entièrement en français.**
+        """
         ...
 
     async def identify_ic_ratio_patterns(self, period_analysis_data: Dict[str, Any]) -> str:
@@ -960,10 +1326,27 @@ class RatioAnalysisAgent(DiabetesAgent):
         Returns:
             Pattern analysis focusing on I:C ratio trends with clinical evidence
         """
-        # Analyze each pattern type individually
-        insufficient_analysis = self.analyze_pattern_consistency(period_analysis_data, "insufficient")
-        excessive_analysis = self.analyze_pattern_consistency(period_analysis_data, "excessive")
-        correction_overshot_analysis = self.analyze_pattern_consistency(period_analysis_data, "correction_overshot")
+        # Analyze each pattern type individually with error handling
+        try:
+            insufficient_analysis = self.analyze_pattern_consistency(period_analysis_data, "insufficient")
+            if insufficient_analysis is None:
+                insufficient_analysis = {"trend_confirmed": False, "consistency_rate": 0.0, "pattern_days_count": 0, "total_days_analyzed": 0}
+        except Exception as e:
+            insufficient_analysis = {"trend_confirmed": False, "consistency_rate": 0.0, "pattern_days_count": 0, "total_days_analyzed": 0}
+
+        try:
+            excessive_analysis = self.analyze_pattern_consistency(period_analysis_data, "excessive")
+            if excessive_analysis is None:
+                excessive_analysis = {"trend_confirmed": False, "consistency_rate": 0.0, "pattern_days_count": 0, "total_days_analyzed": 0}
+        except Exception as e:
+            excessive_analysis = {"trend_confirmed": False, "consistency_rate": 0.0, "pattern_days_count": 0, "total_days_analyzed": 0}
+
+        try:
+            correction_overshot_analysis = self.analyze_pattern_consistency(period_analysis_data, "correction_overshot")
+            if correction_overshot_analysis is None:
+                correction_overshot_analysis = {"trend_confirmed": False, "consistency_rate": 0.0, "pattern_days_count": 0, "total_days_analyzed": 0}
+        except Exception as e:
+            correction_overshot_analysis = {"trend_confirmed": False, "consistency_rate": 0.0, "pattern_days_count": 0, "total_days_analyzed": 0}
 
         # Get detailed day-by-day patterns
         daily_patterns = []
@@ -975,8 +1358,8 @@ class RatioAnalysisAgent(DiabetesAgent):
                 "excessive": self.detect_excessive_bolus_pattern(day_data),
                 "correction_overshot": self.detect_correction_overshot_pattern(day_data),
                 "corrections_count": len(day_data.get("correction_boluses", [])),
-                "glucose_lows": day_data.get("bg_response", {}).get("under_80", 0),
-                "glucose_highs": day_data.get("bg_response", {}).get("over_200", 0),
+                "glucose_lows": (day_data.get("bg_response") or {}).get("under_80", 0),
+                "glucose_highs": (day_data.get("bg_response") or {}).get("over_200", 0),
                 "ic_ratios_used": [b.get("ic_ratio") for b in day_data.get("bolus_events", []) if b.get("ic_ratio")]
             }
             daily_patterns.append(patterns)
@@ -1038,7 +1421,7 @@ Analyze these clinical patterns and identify the most significant I:C ratio tren
 
         # Calculate safety metrics
         total_lows = sum(
-            day.get("bg_response", {}).get("under_80", 0)
+            (day.get("bg_response") or {}).get("under_80", 0)
             for day in period_analysis_data.get("days_data", [])
         )
         total_corrections = sum(
@@ -1056,6 +1439,93 @@ Analyze these clinical patterns and identify the most significant I:C ratio tren
                 "days_analyzed": trend_analysis["total_days_analyzed"]
             }
         }
+
+    def calculate_adjustment_context(self, period_analysis_data: Dict[str, Any]) -> str:
+        """
+        Calculate adjustment context for LLM analysis.
+
+        Args:
+            period_analysis_data: Structured period data
+
+        Returns:
+            Formatted adjustment context string
+        """
+        # Get comprehensive trend analysis with error handling
+        try:
+            trend_analysis = self.calculate_trend_strength(period_analysis_data)
+            if trend_analysis is None:
+                trend_analysis = {"total_days_analyzed": 0, "primary_recommendation": "Données insuffisantes", "confidence_score": 0.0}
+        except Exception as e:
+            trend_analysis = {"total_days_analyzed": 0, "primary_recommendation": "Erreur d'analyse", "confidence_score": 0.0}
+
+        # Detect historical changes and their effectiveness with error handling
+        try:
+            ratio_changes = self.detect_ratio_changes(period_analysis_data)
+            if ratio_changes is None:
+                ratio_changes = []
+        except Exception as e:
+            ratio_changes = []
+
+        change_evaluations = []
+        for change in ratio_changes:
+            try:
+                evaluation = self.evaluate_change_effectiveness(period_analysis_data, change)
+                if evaluation is not None:
+                    change_evaluations.append(evaluation)
+            except Exception as e:
+                continue
+
+        # Get current I:C ratios being used
+        current_ratios = []
+        for day_data in period_analysis_data.get("days_data", []):
+            for bolus in day_data.get("bolus_events", []):
+                if bolus.get("ic_ratio"):
+                    current_ratios.append(bolus["ic_ratio"])
+
+        unique_ratios = list(set(current_ratios)) if current_ratios else []
+
+        # Calculate safety metrics
+        total_lows = sum(
+            (day.get("bg_response") or {}).get("under_80", 0)
+            for day in period_analysis_data.get("days_data", [])
+        )
+        total_corrections = sum(
+            len(day.get("correction_boluses", []))
+            for day in period_analysis_data.get("days_data", [])
+        )
+
+        adjustment_context = {
+            "trend_analysis": trend_analysis,
+            "current_ratios": unique_ratios,
+            "historical_changes": change_evaluations,
+            "safety_metrics": {
+                "total_hypoglycemic_events": total_lows,
+                "total_corrections_needed": total_corrections,
+                "days_analyzed": trend_analysis["total_days_analyzed"]
+            }
+        }
+
+        return f"""
+Trend Analysis: {trend_analysis}
+Current Ratios: {unique_ratios}
+Safety Metrics: {total_lows} lows, {total_corrections} corrections
+Historical Changes: {len(change_evaluations)} changes detected
+"""
+
+    async def suggest_ic_ratio_adjustments(self, period_analysis_data: Dict[str, Any]) -> str:
+        """
+        Suggest specific I:C ratio adjustments based on clinical pattern analysis.
+
+        Uses evidence-based criteria to provide concrete adjustment recommendations
+        with safety considerations.
+
+        Args:
+            period_analysis_data: Structured period data
+
+        Returns:
+            Specific I:C ratio adjustment recommendations with clinical rationale
+        """
+        adjustment_context = self.calculate_adjustment_context(period_analysis_data)
 
         return f"""
 I:C Ratio Adjustment Recommendations for {period_analysis_data.get('period_name')}:
@@ -1108,7 +1578,7 @@ Provide specific I:C ratio adjustment recommendations with clinical rationale an
             for day in period_analysis_data.get("days_data", [])
         )
         total_lows = sum(
-            day.get("bg_response", {}).get("under_80", 0)
+            (day.get("bg_response") or {}).get("under_80", 0)
             for day in period_analysis_data.get("days_data", [])
         )
 
