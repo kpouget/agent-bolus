@@ -8,8 +8,11 @@ import sys
 import json
 import shutil
 import asyncio
-from datetime import datetime
+import argparse
+from datetime import datetime, timedelta
 from pathlib import Path
+
+MAX_DATA_AGE_HOURS = 24
 
 # Add nooa to path
 sys.path.append(str(Path(__file__).parent.parent / "nooa"))
@@ -41,110 +44,7 @@ def load_fetch_status():
     except Exception:
         return {}
 
-def markdown_to_html(markdown_text, title="Analysis"):
-    """Convert markdown text to HTML."""
-    import re
-
-    # Simple markdown to HTML conversion
-    # Replace headers
-    html = markdown_text
-    html = html.replace('# ', '<h1>').replace('\n## ', '</h1>\n<h2>')
-    html = html.replace('\n### ', '</h2>\n<h3>').replace('\n#### ', '</h3>\n<h4>')
-
-    # Replace bold and italic
-    html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', html)
-    html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', html)
-
-    # Replace line breaks with paragraphs
-    paragraphs = html.split('\n\n')
-    html_paragraphs = []
-    for para in paragraphs:
-        para = para.strip()
-        if para:
-            if para.startswith('<h') or para.startswith('</h'):
-                html_paragraphs.append(para)
-            else:
-                # Replace single line breaks with <br>
-                para = para.replace('\n', '<br>')
-                html_paragraphs.append(f'<p>{para}</p>')
-
-    content = '\n'.join(html_paragraphs)
-
-    # Wrap in full HTML document
-    return f"""<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title} - Analyse des Ratios I:C</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 900px;
-            margin: 40px auto;
-            padding: 20px;
-            background-color: #f8f9fa;
-            color: #333;
-            line-height: 1.6;
-        }}
-        .container {{
-            background: white;
-            border-radius: 8px;
-            padding: 32px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }}
-        h1 {{
-            color: #007acc;
-            border-bottom: 2px solid #007acc;
-            padding-bottom: 16px;
-            margin-bottom: 24px;
-        }}
-        h2 {{
-            color: #0056b3;
-            margin-top: 32px;
-            margin-bottom: 16px;
-        }}
-        h3 {{
-            color: #495057;
-            margin-top: 24px;
-            margin-bottom: 12px;
-        }}
-        h4 {{
-            color: #6c757d;
-            margin-top: 20px;
-            margin-bottom: 10px;
-        }}
-        p {{
-            margin-bottom: 16px;
-        }}
-        strong {{
-            color: #495057;
-        }}
-        em {{
-            color: #6c757d;
-        }}
-        .footer {{
-            text-align: center;
-            color: #666;
-            font-size: 14px;
-            margin-top: 32px;
-            padding-top: 16px;
-            border-top: 1px solid #dee2e6;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        {content}
-
-        <div class="footer">
-            Analyse générée le {datetime.now().strftime("%d/%m/%Y à %H:%M")} par NOOA RatioAnalysisAgent
-        </div>
-    </div>
-</body>
-</html>"""
-
-async def run_bolus_review(target_periods=None):
+async def run_bolus_review(target_periods=None, force=False):
     """Run the NOOA bolus review analysis."""
     start_time = datetime.now()
     print(f"🧪 NOOA Bolus Review - {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -181,9 +81,22 @@ async def run_bolus_review(target_periods=None):
 
         print(f"📁 Using data file: {csv_file}")
 
+        # Check data freshness
+        data_age = None
         if fetch_status.get("last_fetch_timestamp"):
             fetch_time = datetime.fromisoformat(fetch_status["last_fetch_timestamp"])
-            print(f"📅 Data fetched: {fetch_time.strftime('%Y-%m-%d at %H:%M:%S')}")
+            data_age = start_time - fetch_time
+            print(f"📅 Data fetched: {fetch_time.strftime('%Y-%m-%d at %H:%M:%S')} ({data_age.total_seconds()/3600:.1f}h ago)")
+        else:
+            mtime = datetime.fromtimestamp(csv_file.stat().st_mtime)
+            data_age = start_time - mtime
+            print(f"📅 Data file modified: {mtime.strftime('%Y-%m-%d at %H:%M:%S')} ({data_age.total_seconds()/3600:.1f}h ago)")
+
+        if data_age and data_age > timedelta(hours=MAX_DATA_AGE_HOURS) and not force:
+            print(f"❌ Data is {data_age.total_seconds()/3600:.1f}h old (max {MAX_DATA_AGE_HOURS}h)")
+            print(f"   💡 Run 'python3 scripts/fetch_diabetes_data.py' to refresh data")
+            print(f"   💡 Or use --force to bypass this check")
+            return False
 
         # Setup LLM client
         print(f"🔧 Setting up LLM client...")
@@ -225,98 +138,10 @@ async def run_bolus_review(target_periods=None):
 
         print(f"✅ Analysis completed for {len(results['periods_analyzed'])} periods")
 
-        # Process each period's results
-        for period in results["periods_analyzed"]:
-            period_lower = period.lower()
-            print(f"\n📈 Processing {period}...")
-
-            # Look for files in period-specific subdirectory with numeric prefix
-            period_prefixes = {
-                "breakfast": "0",
-                "lunch": "1",
-                "snack": "2",
-                "dinner": "3",
-                "night": "4"
-            }
-            prefix = period_prefixes.get(period_lower, "9")
-            period_dir = generated_dir / f"{prefix}_{period_lower}"
-
-            if not period_dir.exists():
-                print(f"   ⚠️  No period directory found for {period}")
-                continue
-
-            plot_data_files = list(period_dir.glob("insuline_data_7days.yml"))
-            bg_detailed_files = list(period_dir.glob("bg_detailed.yaml"))
-            llm_analysis_files = list(period_dir.glob("llm_analysis.md"))
-            conclusion_files = list(period_dir.glob("conclusion.md"))
-            complete_data_files = list(period_dir.glob("bg_data_*days.yaml"))
-
-            if not plot_data_files:
-                print(f"   ⚠️  No plot data found for {period}")
-                continue
-
-            # Files are already in the correct location, just report them
-            for yaml_file in plot_data_files + bg_detailed_files + complete_data_files:
-                print(f"   📄 YAML found: {prefix}_{period_lower}/{yaml_file.name}")
-
-            for conclusion_file in conclusion_files:
-                print(f"   📄 Conclusion found: {prefix}_{period_lower}/{conclusion_file.name}")
-
-            # Convert LLM analysis to HTML
-            if llm_analysis_files:
-                md_file = llm_analysis_files[0]  # Use the first one found
-
-                try:
-                    with open(md_file, 'r', encoding='utf-8') as f:
-                        markdown_content = f.read()
-
-                    # Convert to HTML (duration already included in MD file)
-                    html_content = markdown_to_html(
-                        markdown_content,
-                        title=f"Analyse {period}"
-                    )
-
-                    # Save HTML file with ordering prefix (already defined above)
-
-                    html_file = generated_dir / f"{prefix}_{period_lower}.html"
-                    with open(html_file, 'w', encoding='utf-8') as f:
-                        f.write(html_content)
-
-                    print(f"   🌐 HTML saved: {html_file.name}")
-                    print(f"   📝 MD source: {prefix}_{period_lower}/llm_analysis.md")
-
-                except Exception as e:
-                    print(f"   ❌ Failed to convert {period} analysis to HTML: {e}")
-
-        # Show summary
-        print(f"\n📋 Review Summary:")
-        print(f"   📊 Periods analyzed: {len(results['periods_analyzed'])}")
-
-        # Count files in period subdirectories
-        total_yaml_files = 0
-        total_conclusion_files = 0
-        for item in generated_dir.iterdir():
-            if item.is_dir():
-                total_yaml_files += len(list(item.glob('*.yaml'))) + len(list(item.glob('*.yml')))
-                total_conclusion_files += len(list(item.glob('conclusion.md')))
-
-        print(f"   📁 YAML files: {total_yaml_files}")
-        print(f"   📄 Conclusion files: {total_conclusion_files}")
-        print(f"   🌐 HTML files: {len(list(generated_dir.glob('*.html')))}")
-        print(f"   📧 Aggregated conclusions: {len(list(generated_dir.glob('all_conclusions.md')))}")
-
-        print(f"\n📁 Output structure:")
-        print(f"   📊 YAML data: generated/{timestamp}/[N_period]/ (per period)")
-        print(f"   📄 Conclusions: generated/{timestamp}/[N_period]/conclusion.md")
-        print(f"   🌐 HTML reports: generated/{timestamp}/")
-        print(f"   📧 Email summary: generated/{timestamp}/all_conclusions.md")
-
-        # Show period directories
-        print(f"\n📂 Period directories created:")
-        for item in sorted(generated_dir.iterdir()):
-            if item.is_dir():
-                file_count = len(list(item.glob('*')))
-                print(f"   📁 {timestamp}/{item.name}/ ({file_count} files)")
+        # Post-process: generate HTML reports with charts
+        from postprocess import postprocess
+        print(f"\n📊 Running post-processing...")
+        postprocess(generated_dir)
 
         # Calculate total duration
         end_time = datetime.now()
@@ -335,28 +160,19 @@ async def run_bolus_review(target_periods=None):
 
 def main():
     """Main entry point."""
-    # Parse command line arguments
-    target_periods = None
     valid_periods = ["breakfast", "lunch", "snack", "dinner", "night"]
 
-    if len(sys.argv) > 1:
-        # Get period arguments from command line
-        requested_periods = [arg.lower() for arg in sys.argv[1:] if arg.lower() in valid_periods]
+    parser = argparse.ArgumentParser(description="NOOA Bolus Review - Analyze diabetes data")
+    parser.add_argument("periods", nargs="*", choices=valid_periods, metavar="PERIOD",
+                        help=f"Periods to analyze ({', '.join(valid_periods)}). All if omitted.")
+    parser.add_argument("--force", "-f", action="store_true",
+                        help=f"Run even if data is older than {MAX_DATA_AGE_HOURS}h")
+    args = parser.parse_args()
 
-        if requested_periods:
-            target_periods = requested_periods
-            print(f"🎯 Running analysis for specific periods: {', '.join(target_periods)}")
-        else:
-            # Show help if invalid periods provided
-            invalid_args = [arg for arg in sys.argv[1:] if arg.lower() not in valid_periods and not arg.startswith('-')]
-            if invalid_args:
-                print(f"❌ Invalid periods: {', '.join(invalid_args)}")
-                print(f"💡 Valid periods: {', '.join(valid_periods)}")
-                print(f"💡 Usage: {sys.argv[0]} [breakfast] [lunch] [snack] [dinner] [night]")
-                sys.exit(1)
+    target_periods = args.periods or None
 
     try:
-        success = asyncio.run(run_bolus_review(target_periods))
+        success = asyncio.run(run_bolus_review(target_periods, force=args.force))
         if success:
             print(f"\n🎉 Review completed successfully")
             sys.exit(0)
