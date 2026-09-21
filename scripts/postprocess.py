@@ -296,7 +296,7 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
         yaxis=dict(title="Glycémie (mg/dL)", range=[40, 350], gridcolor="#eee"),
         plot_bgcolor="white",
         paper_bgcolor="white",
-        hovermode="x unified",
+        hovermode="closest",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(l=60, r=30, t=60, b=60),
         height=450,
