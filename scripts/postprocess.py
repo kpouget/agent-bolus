@@ -190,6 +190,18 @@ def render_markdown(text):
     return md.markdown(text, extensions=["extra", "sane_lists"])
 
 
+FRENCH_MONTHS = [
+    "", "Jan", "Fév", "Mars", "Avr", "Mai", "Juin",
+    "Juil", "Août", "Sept", "Oct", "Nov", "Déc",
+]
+
+
+def format_date_fr(date_str):
+    """Convert '2026/09/13' to '13 Sept'."""
+    d = datetime.strptime(date_str, "%Y/%m/%d")
+    return f"{d.day} {FRENCH_MONTHS[d.month]}"
+
+
 def parse_time(time_str):
     t = datetime.strptime(str(time_str), "%H:%M:%S")
     return datetime(2000, 1, 1, t.hour, t.minute, t.second)
@@ -223,6 +235,7 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
     days_bg = bg_detailed.get("days_bg_data", [])
     for i, day in enumerate(days_bg):
         date_label = day["date"]
+        date_fr = format_date_fr(date_label)
         readings = day.get("bg_readings", [])
         bg_by_date[date_label] = readings
         if not readings:
@@ -233,15 +246,16 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
         fig.add_trace(go.Scatter(
             x=times, y=values,
             mode="lines",
-            name=date_label,
-            legendgroup=date_label,
+            name=date_fr,
+            legendgroup=date_fr,
             line=dict(color=color, width=3 if i == 0 else 1.5),
-            hovertemplate=f"{date_label}<br>%{{x|%H:%M}}<br>%{{y}} mg/dL<extra></extra>",
+            hovertemplate=f"{date_fr}<br>%{{x|%H:%M}}<br>%{{y}} mg/dL<extra></extra>",
         ))
 
     days_ins = insulin_data.get("days_data", [])
     for i, day in enumerate(days_ins):
         date_label = day["date"]
+        date_fr = format_date_fr(date_label)
         for bolus in day.get("bolus_events", []):
             t = parse_time(bolus["time"])
             bg = bolus.get("bg_input", 0)
@@ -251,7 +265,7 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
             fig.add_trace(go.Scatter(
                 x=[t], y=[bg],
                 mode="markers+text",
-                legendgroup=date_label,
+                legendgroup=date_fr,
                 marker=dict(symbol="triangle-up", size=14, color="#e74c3c",
                             line=dict(width=1, color="white")),
                 text=[f"{carb:.0f}g"],
@@ -259,7 +273,7 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
                 textfont=dict(size=10),
                 showlegend=False,
                 hovertemplate=(
-                    f"{date_label}<br>%{{x|%H:%M}}<br>"
+                    f"{date_fr}<br>%{{x|%H:%M}}<br>"
                     f"Glucides: {carb:.0f}g<br>"
                     f"Insuline: {ins:.2f}U<br>"
                     f"Ratio I:C: {ic:.0f}<br>"
@@ -274,7 +288,7 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
             fig.add_trace(go.Scatter(
                 x=[t], y=[y_val],
                 mode="markers+text",
-                legendgroup=date_label,
+                legendgroup=date_fr,
                 marker=dict(symbol="diamond", size=10, color="#f39c12",
                             line=dict(width=1, color="white")),
                 text=[f"{ins:.1f}U"],
@@ -282,7 +296,7 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
                 textfont=dict(size=10),
                 showlegend=False,
                 hovertemplate=(
-                    f"Correction {date_label}<br>%{{x|%H:%M}}<br>"
+                    f"Correction {date_fr}<br>%{{x|%H:%M}}<br>"
                     f"Insuline: {ins:.1f}U<extra></extra>"
                 ),
             ))
@@ -327,6 +341,7 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
         var opacities = gd.data.map(function() { return 1; });
         var widths = origWidths.slice();
         Plotly.restyle(gd, {opacity: opacities, 'line.width': widths});
+        Plotly.relayout(gd, {annotations: []});
         lockedGroup = null;
     }
 
@@ -347,6 +362,15 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
             }
         });
         Plotly.restyle(gd, {opacity: opacities, 'line.width': widths});
+        Plotly.relayout(gd, {annotations: [{
+            text: '<b>' + group + '</b>',
+            xref: 'paper', yref: 'paper',
+            x: 0.01, y: 0.98,
+            showarrow: false,
+            font: {size: 16, color: '#007acc'},
+            bgcolor: 'rgba(255,255,255,0.85)',
+            borderpad: 6
+        }]});
     }
 
     gd.on('plotly_click', function(data) {
@@ -395,7 +419,7 @@ def build_summary_table(insulin_data):
         hyper_cls = ' class="warn"' if hyper > 0 else ' class="ok"'
 
         rows.append(
-            f"<tr><td>{date}</td><td>{total_carbs:.0f}g</td><td>{total_ins:.2f}U</td>"
+            f"<tr><td>{format_date_fr(date)}</td><td>{total_carbs:.0f}g</td><td>{total_ins:.2f}U</td>"
             f"<td>{ic}</td><td>{start}</td><td>{finish}</td>"
             f"<td>{mn}</td><td>{mx}</td>"
             f"<td{hypo_cls}>{hypo}</td><td{hyper_cls}>{hyper}</td>"
