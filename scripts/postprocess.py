@@ -305,7 +305,37 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
         height=450,
     )
 
-    return fig.to_html(full_html=False, include_plotlyjs="cdn")
+    chart_html = fig.to_html(full_html=False, include_plotlyjs="cdn")
+
+    highlight_js = """
+<script>
+(function() {
+    var gd = document.querySelector('.plotly-graph-div');
+    if (!gd) return;
+    var origOpacities = null;
+
+    gd.on('plotly_hover', function(data) {
+        var traces = gd.data;
+        if (!origOpacities) {
+            origOpacities = traces.map(function(t) { return t.opacity; });
+        }
+        var hoverGroup = data.points[0].data.legendgroup;
+        if (!hoverGroup) return;
+        var update = {opacity: traces.map(function(t) {
+            if (!t.legendgroup) return 1;
+            return t.legendgroup === hoverGroup ? 1 : 0.15;
+        })};
+        Plotly.restyle(gd, {opacity: update.opacity});
+    });
+
+    gd.on('plotly_unhover', function() {
+        if (!origOpacities) return;
+        Plotly.restyle(gd, {opacity: origOpacities});
+    });
+})();
+</script>
+"""
+    return chart_html + highlight_js
 
 
 def build_summary_table(insulin_data):
