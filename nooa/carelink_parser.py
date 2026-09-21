@@ -441,7 +441,8 @@ def extract_bg_for_periods(filepath: str, organized_bolus_data: Dict[str, Dict[s
                 first_bolus = min(bolus_times)
                 last_bolus = max(bolus_times)
 
-                # Calculate time window: first bolus to 3h after last bolus
+                # Calculate time window: 15min before first bolus to 3h after last bolus
+                start_time = first_bolus - timedelta(minutes=15)
                 end_time = last_bolus + timedelta(hours=3)
 
                 # Extract BG readings in this time window
@@ -468,7 +469,7 @@ def extract_bg_for_periods(filepath: str, organized_bolus_data: Dict[str, Dict[s
                         reading_time = datetime.strptime(f"{date_str} {time_str}", "%Y/%m/%d %H:%M:%S")
 
                         # Check if reading is within our time window
-                        if first_bolus <= reading_time <= end_time:
+                        if start_time <= reading_time <= end_time:
                             # Extract sensor glucose
                             sensor_value = row_data[sensor_glucose_idx] if sensor_glucose_idx < len(row_data) else ""
                             if sensor_value and sensor_value.replace(',', '.').replace('.', '').isdigit():
@@ -487,7 +488,7 @@ def extract_bg_for_periods(filepath: str, organized_bolus_data: Dict[str, Dict[s
                 period_readings.sort(key=lambda x: datetime.strptime(x.timestamp, "%Y/%m/%d %H:%M:%S"))
                 bg_data[date][period_name] = period_readings
 
-                print(f"   📅 {date} {period_name}: {len(period_readings)} BG readings ({first_bolus.strftime('%H:%M')} - {end_time.strftime('%H:%M')})")
+                print(f"   📅 {date} {period_name}: {len(period_readings)} BG readings ({start_time.strftime('%H:%M')} - {end_time.strftime('%H:%M')})")
 
     except Exception as e:
         print(f"❌ Error extracting BG data: {e}")
