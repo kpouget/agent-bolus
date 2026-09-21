@@ -312,25 +312,58 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
 (function() {
     var gd = document.querySelector('.plotly-graph-div');
     if (!gd) return;
-    var origOpacities = null;
+    var origWidths = null;
+    var lockedGroup = null;
 
-    gd.on('plotly_hover', function(data) {
-        var traces = gd.data;
-        if (!origOpacities) {
-            origOpacities = traces.map(function(t) { return t.opacity; });
+    function saveOriginals() {
+        if (origWidths) return;
+        origWidths = gd.data.map(function(t) {
+            return t.line ? t.line.width : null;
+        });
+    }
+
+    function restore() {
+        if (!origWidths) return;
+        var opacities = gd.data.map(function() { return 1; });
+        var widths = origWidths.slice();
+        Plotly.restyle(gd, {opacity: opacities, 'line.width': widths});
+        lockedGroup = null;
+    }
+
+    function highlight(group) {
+        saveOriginals();
+        var opacities = [];
+        var widths = [];
+        gd.data.forEach(function(t, i) {
+            if (!t.legendgroup) {
+                opacities.push(1);
+                widths.push(origWidths[i]);
+            } else if (t.legendgroup === group) {
+                opacities.push(1);
+                widths.push(4);
+            } else {
+                opacities.push(0.12);
+                widths.push(origWidths[i]);
+            }
+        });
+        Plotly.restyle(gd, {opacity: opacities, 'line.width': widths});
+    }
+
+    gd.on('plotly_click', function(data) {
+        var clickedGroup = data.points[0].data.legendgroup;
+        if (!clickedGroup) return;
+        if (lockedGroup === clickedGroup) {
+            restore();
+        } else {
+            highlight(clickedGroup);
+            lockedGroup = clickedGroup;
         }
-        var hoverGroup = data.points[0].data.legendgroup;
-        if (!hoverGroup) return;
-        var update = {opacity: traces.map(function(t) {
-            if (!t.legendgroup) return 1;
-            return t.legendgroup === hoverGroup ? 1 : 0.15;
-        })};
-        Plotly.restyle(gd, {opacity: update.opacity});
     });
 
-    gd.on('plotly_unhover', function() {
-        if (!origOpacities) return;
-        Plotly.restyle(gd, {opacity: origOpacities});
+    // Double-click anywhere resets
+    gd.querySelector('.plotarea').addEventListener('dblclick', function(e) {
+        e.stopPropagation();
+        if (lockedGroup) restore();
     });
 })();
 </script>
