@@ -195,6 +195,20 @@ def parse_time(time_str):
     return datetime(2000, 1, 1, t.hour, t.minute, t.second)
 
 
+def _find_bg_at_time(bg_readings, time_str):
+    """Find the closest BG reading to a given time."""
+    target = parse_time(time_str)
+    best_val = None
+    best_delta = None
+    for r in bg_readings:
+        rt = parse_time(r["time"])
+        delta = abs((rt - target).total_seconds())
+        if best_delta is None or delta < best_delta:
+            best_delta = delta
+            best_val = r["value"]
+    return best_val
+
+
 def build_glucose_chart(bg_detailed, insulin_data, period_name):
     fig = go.Figure()
 
@@ -204,10 +218,13 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
         line_width=0,
     )
 
+    # Index BG readings by date for correction bolus lookup
+    bg_by_date = {}
     days_bg = bg_detailed.get("days_bg_data", [])
     for i, day in enumerate(days_bg):
         date_label = day["date"]
         readings = day.get("bg_readings", [])
+        bg_by_date[date_label] = readings
         if not readings:
             continue
         times = [parse_time(r["time"]) for r in readings]
@@ -250,15 +267,20 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
         for corr in day.get("correction_boluses", []):
             t = parse_time(corr["time"])
             ins = corr.get("insulin_delivered", 0)
+            bg_at_corr = _find_bg_at_time(bg_by_date.get(date_label, []), corr["time"])
+            y_val = bg_at_corr if bg_at_corr is not None else TARGET_HIGH
             fig.add_trace(go.Scatter(
-                x=[t], y=[TARGET_HIGH],
-                mode="markers",
+                x=[t], y=[y_val],
+                mode="markers+text",
                 marker=dict(symbol="diamond", size=10, color="#f39c12",
                             line=dict(width=1, color="white")),
+                text=[f"{ins:.1f}U"],
+                textposition="top center",
+                textfont=dict(size=10),
                 showlegend=False,
                 hovertemplate=(
                     f"Correction {date_label}<br>%{{x|%H:%M}}<br>"
-                    f"Insuline: {ins:.2f}U<extra></extra>"
+                    f"Insuline: {ins:.1f}U<extra></extra>"
                 ),
             ))
 
