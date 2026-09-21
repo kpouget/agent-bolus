@@ -234,6 +234,7 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
             x=times, y=values,
             mode="lines",
             name=date_label,
+            legendgroup=date_label,
             line=dict(color=color, width=3 if i == 0 else 1.5),
             hovertemplate=f"{date_label}<br>%{{x|%H:%M}}<br>%{{y}} mg/dL<extra></extra>",
         ))
@@ -250,6 +251,7 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
             fig.add_trace(go.Scatter(
                 x=[t], y=[bg],
                 mode="markers+text",
+                legendgroup=date_label,
                 marker=dict(symbol="triangle-up", size=14, color="#e74c3c",
                             line=dict(width=1, color="white")),
                 text=[f"{carb:.0f}g"],
@@ -272,6 +274,7 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
             fig.add_trace(go.Scatter(
                 x=[t], y=[y_val],
                 mode="markers+text",
+                legendgroup=date_label,
                 marker=dict(symbol="diamond", size=10, color="#f39c12",
                             line=dict(width=1, color="white")),
                 text=[f"{ins:.1f}U"],
