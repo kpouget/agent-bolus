@@ -515,6 +515,30 @@ class RatioAnalysisAgent(DiabetesAgent):
                 print(f"   ⚠️  Fallback timestamp extraction failed: {e}")
 
         if latest_timestamp:
+            try:
+                for fmt in ("%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y-%m-%d %H:%M"):
+                    try:
+                        ts = datetime.strptime(latest_timestamp, fmt)
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    ts = None
+
+                if ts:
+                    delta = datetime.now() - ts
+                    total_hours = int(delta.total_seconds() // 3600)
+                    if total_hours < 1:
+                        minutes = int(delta.total_seconds() // 60)
+                        delta_str = f"il y a {minutes}min"
+                    elif total_hours < 48:
+                        delta_str = f"il y a {total_hours}h"
+                    else:
+                        days = total_hours // 24
+                        delta_str = f"il y a {days}j"
+                    return f"**Dernière glycémie capteur:** {latest_timestamp} ({delta_str})"
+            except Exception:
+                pass
             return f"**Dernière glycémie capteur:** {latest_timestamp}"
         else:
             return "**Dernière glycémie capteur:** Non disponible"
