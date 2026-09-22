@@ -133,8 +133,7 @@ td.ok { color: #28a745; }
     border-color: #007acc;
 }
 .period-card h3 { margin: 0 0 8px 0; color: #007acc; }
-.period-card .recommendation { font-size: 14px; margin-bottom: 4px; }
-.period-card .confidence { font-size: 13px; color: #888; }
+.period-card .recommendation { font-size: 14px; }
 .footer {
     text-align: center;
     color: #666;
@@ -510,14 +509,17 @@ def build_index_html(gen_dir, periods, summary_data):
         label = PERIOD_LABELS.get(name, name.capitalize())
         html_file = f"{prefix}_{name}.html"
         info = summary.get(name.capitalize(), {})
-        rec = info.get("primary_recommendation", "").replace("_", " ").capitalize()
-        conf = info.get("confidence", None)
-        conf_str = f"{conf*100:.0f}%" if conf is not None else ""
+        rec_raw = info.get("primary_recommendation", "").replace("_", " ").strip().lower()
+        rec_translations = {
+            "no adjustment": "Pas d'ajustement",
+            "decrease ic ratio": "Augmenter l'insuline du bolus",
+            "increase ic ratio": "Diminuer l'insuline du bolus",
+        }
+        rec = rec_translations.get(rec_raw, rec_raw.capitalize() if rec_raw else "—")
         cards.append(
             f'<a href="{html_file}" class="period-card">'
             f"<h3>{label}</h3>"
-            f'<div class="recommendation">{rec or "—"}</div>'
-            f'<div class="confidence">Confiance: {conf_str or "—"}</div>'
+            f'<div class="recommendation">{rec}</div>'
             f"</a>"
         )
 
