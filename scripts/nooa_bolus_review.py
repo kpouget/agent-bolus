@@ -14,12 +14,13 @@ from pathlib import Path
 
 MAX_DATA_AGE_HOURS = 24
 
-# Add nooa to path
+# Add nooa and glookoxt to path
 sys.path.append(str(Path(__file__).parent.parent / "nooa"))
 sys.path.append(str(Path(__file__).parent.parent / "carelink-python-client"))
+sys.path.append(str(Path(__file__).parent.parent / "glookoxt"))
 
 def find_latest_csv_file():
-    """Find the most recent CSV file in the data directory."""
+    """Find the most recent Carelink CSV file in the data directory."""
     data_dir = Path("data")
     if not data_dir.exists():
         return None
@@ -28,13 +29,31 @@ def find_latest_csv_file():
     if not csv_files:
         return None
 
-    # Sort by modification time, newest first
     csv_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
     return csv_files[0]
 
-def load_fetch_status():
+
+def find_latest_glookoxt_file():
+    """Find the most recent GlookoXT JSON file in the data directory."""
+    data_dir = Path("data")
+    if not data_dir.exists():
+        return None
+
+    json_files = list(data_dir.glob("glookoxt_data_*.json"))
+    if not json_files:
+        return None
+
+    json_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+    return json_files[0]
+
+
+def load_fetch_status(use_carelink=False):
     """Load the fetch status to get latest data file info."""
-    status_file = Path("data/fetch_status.json")
+    if use_carelink:
+        status_file = Path("data/fetch_status.json")
+    else:
+        status_file = Path("data/glookoxt_fetch_status.json")
+
     if not status_file.exists():
         return {}
 
@@ -44,10 +63,11 @@ def load_fetch_status():
     except Exception:
         return {}
 
-async def run_bolus_review(target_periods=None, force=False):
+async def run_bolus_review(target_periods=None, force=False, use_carelink=False):
     """Run the NOOA bolus review analysis."""
     start_time = datetime.now()
-    print(f"🧪 NOOA Bolus Review - {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    provider = "Carelink" if use_carelink else "GlookoXT"
+    print(f"🧪 NOOA Bolus Review ({provider}) - {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     if target_periods:
         print(f"🎯 Target periods: {', '.join(target_periods)}")
@@ -64,37 +84,45 @@ async def run_bolus_review(target_periods=None, force=False):
         # Load environment
         load_dotenv()
 
-        # Find latest CSV data file
-        csv_file = find_latest_csv_file()
-        fetch_status = load_fetch_status()
+        # Select parser and find data file based on provider
+        if use_carelink:
+            import carelink_parser as parser_module
+            data_file = find_latest_csv_file()
+            fetch_status = load_fetch_status(use_carelink=True)
+            fetch_cmd = "python3 scripts/fetch_diabetes_data.py"
+        else:
+            import glookoxt_parser as parser_module
+            data_file = find_latest_glookoxt_file()
+            fetch_status = load_fetch_status(use_carelink=False)
+            fetch_cmd = "python3 scripts/fetch_glookoxt_data.py"
 
         # Try to get the latest file from status first
         if fetch_status.get("latest_data_file"):
             status_file = Path(fetch_status["latest_data_file"])
             if status_file.exists():
-                csv_file = status_file
+                data_file = status_file
 
-        if not csv_file or not csv_file.exists():
-            print(f"❌ No CSV data file found!")
-            print(f"   💡 Run 'python3 scripts/fetch_diabetes_data.py' first to fetch data")
+        if not data_file or not Path(data_file).exists():
+            print(f"❌ No {provider} data file found!")
+            print(f"   💡 Run '{fetch_cmd}' first to fetch data")
             return False
 
-        print(f"📁 Using data file: {csv_file}")
+        print(f"📁 Using data file: {data_file}")
 
         # Check data freshness
         data_age = None
         if fetch_status.get("last_fetch_timestamp"):
-            fetch_time = datetime.fromisoformat(fetch_status["last_fetch_timestamp"])
+            fetch_time = datetime.fromisoformat(fetch_status["last_fetch_timestamp"]).replace(tzinfo=None)
             data_age = start_time - fetch_time
             print(f"📅 Data fetched: {fetch_time.strftime('%Y-%m-%d at %H:%M:%S')} ({data_age.total_seconds()/3600:.1f}h ago)")
         else:
-            mtime = datetime.fromtimestamp(csv_file.stat().st_mtime)
+            mtime = datetime.fromtimestamp(Path(data_file).stat().st_mtime)
             data_age = start_time - mtime
             print(f"📅 Data file modified: {mtime.strftime('%Y-%m-%d at %H:%M:%S')} ({data_age.total_seconds()/3600:.1f}h ago)")
 
         if data_age and data_age > timedelta(hours=MAX_DATA_AGE_HOURS) and not force:
             print(f"❌ Data is {data_age.total_seconds()/3600:.1f}h old (max {MAX_DATA_AGE_HOURS}h)")
-            print(f"   💡 Run 'python3 scripts/fetch_diabetes_data.py' to refresh data")
+            print(f"   💡 Run '{fetch_cmd}' to refresh data")
             print(f"   💡 Or use --force to bypass this check")
             return False
 
@@ -111,8 +139,8 @@ async def run_bolus_review(target_periods=None, force=False):
             print(f"❌ Failed to create LLM client: {e}")
             return False
 
-        # Create analysis agent
-        agent = RatioAnalysisAgent("review_patient", llm=llm)
+        # Create analysis agent with selected parser
+        agent = RatioAnalysisAgent("review_patient", llm=llm, parser=parser_module)
         print(f"✅ RatioAnalysisAgent created")
 
         # Create timestamped output directories
@@ -126,7 +154,7 @@ async def run_bolus_review(target_periods=None, force=False):
 
         # Run analysis - save directly to timestamped directory
         results = await agent.analyze_all_periods_and_save(
-            filepath=str(csv_file),
+            filepath=str(data_file),
             days_back=7,
             output_dir=str(generated_dir),
             target_periods=target_periods
@@ -167,12 +195,14 @@ def main():
                         help=f"Periods to analyze ({', '.join(valid_periods)}). All if omitted.")
     parser.add_argument("--force", "-f", action="store_true",
                         help=f"Run even if data is older than {MAX_DATA_AGE_HOURS}h")
+    parser.add_argument("--carelink", action="store_true",
+                        help="Use Carelink CSV data instead of GlookoXT (default)")
     args = parser.parse_args()
 
     target_periods = args.periods or None
 
     try:
-        success = asyncio.run(run_bolus_review(target_periods, force=args.force))
+        success = asyncio.run(run_bolus_review(target_periods, force=args.force, use_carelink=args.carelink))
         if success:
             print(f"\n🎉 Review completed successfully")
             sys.exit(0)

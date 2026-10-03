@@ -13,7 +13,7 @@ from datetime import datetime
 
 from nooa import Agent
 from diabetes_agent import DiabetesAgent
-from carelink_parser import parse_bolus_events, extract_bg_for_periods, extract_correction_boluses, extract_basal_for_periods
+import carelink_parser as _default_parser
 from data_logger import summary_log_method
 
 
@@ -25,12 +25,13 @@ class RatioAnalysisAgent(DiabetesAgent):
     with day -1 being most important for analysis.
     """
 
-    def __init__(self, patient_id: str = "analysis_patient", llm=None):
+    def __init__(self, patient_id: str = "analysis_patient", llm=None, parser=None):
         # Initialize the parent DiabetesAgent
         if llm is not None:
             super().__init__(patient_id, llm)
         else:
             super().__init__(patient_id)
+        self.parser = parser or _default_parser
 
     @summary_log_method()
     def get_period_analysis_data(self, filepath: str, period_name: str, days_back: int = 7) -> Dict[str, Any]:
@@ -46,7 +47,7 @@ class RatioAnalysisAgent(DiabetesAgent):
             Structured dictionary with all period data for LLM analysis
         """
         # Parse all the raw data
-        bolus_events = parse_bolus_events(filepath, days_back=days_back)
+        bolus_events = self.parser.parse_bolus_events(filepath, days_back=days_back)
 
         if not bolus_events:
             return {"error": "No bolus events found", "period": period_name}
@@ -61,9 +62,9 @@ class RatioAnalysisAgent(DiabetesAgent):
                 target_period_data[date] = {period_name: periods[period_name]}
 
         # Extract supplementary data for target period only
-        bg_data = extract_bg_for_periods(filepath, target_period_data)
-        correction_data = extract_correction_boluses(filepath, target_period_data)
-        basal_data = extract_basal_for_periods(filepath, target_period_data)
+        bg_data = self.parser.extract_bg_for_periods(filepath, target_period_data)
+        correction_data = self.parser.extract_correction_boluses(filepath, target_period_data)
+        basal_data = self.parser.extract_basal_for_periods(filepath, target_period_data)
 
         # Structure data for the specified period only
         period_analysis = {
@@ -356,7 +357,7 @@ class RatioAnalysisAgent(DiabetesAgent):
                 all_periods_data[date][period_name].append(bolus_event)
 
         # Extract detailed BG readings
-        bg_data = extract_bg_for_periods(filepath, all_periods_data)
+        bg_data = self.parser.extract_bg_for_periods(filepath, all_periods_data)
 
         # Organize for plotting
         detailed_bg = {

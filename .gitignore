@@ -4,3 +4,4 @@ output/*
 generated/*
 carelink-python-client/logindata.json
 glookoxt/logindata.json
+glookoxt/.env

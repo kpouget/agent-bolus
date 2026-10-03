@@ -231,11 +231,11 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
 
     # Index BG readings by date for correction bolus lookup
     bg_by_date = {}
-    days_bg = bg_detailed.get("days_bg_data", [])
+    days_bg = bg_detailed.get("days_bg_data") or []
     for i, day in enumerate(days_bg):
         date_label = day["date"]
         date_fr = format_date_fr(date_label)
-        readings = day.get("bg_readings", [])
+        readings = day.get("bg_readings") or []
         bg_by_date[date_label] = readings
         if not readings:
             continue
@@ -251,16 +251,16 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
             hovertemplate=f"{date_fr}<br>%{{x|%H:%M}}<br>%{{y}} mg/dL<extra></extra>",
         ))
 
-    days_ins = insulin_data.get("days_data", [])
+    days_ins = insulin_data.get("days_data") or []
     for i, day in enumerate(days_ins):
         date_label = day["date"]
         date_fr = format_date_fr(date_label)
-        for bolus in day.get("bolus_events", []):
+        for bolus in (day.get("bolus_events") or []):
             t = parse_time(bolus["time"])
-            bg = bolus.get("bg_input", 0)
-            carb = bolus.get("carb_input", 0)
-            ins = bolus.get("insulin_delivered", 0)
-            ic = bolus.get("ic_ratio", 0)
+            bg = bolus.get("bg_input") or 0
+            carb = bolus.get("carb_input") or 0
+            ins = bolus.get("insulin_delivered") or 0
+            ic = bolus.get("ic_ratio") or 0
             fig.add_trace(go.Scatter(
                 x=[t], y=[bg],
                 mode="markers+text",
@@ -279,9 +279,9 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
                     f"Glyc: {bg} mg/dL<extra></extra>"
                 ),
             ))
-        for corr in day.get("correction_boluses", []):
+        for corr in (day.get("correction_boluses") or []):
             t = parse_time(corr["time"])
-            ins = corr.get("insulin_delivered", 0)
+            ins = corr.get("insulin_delivered") or 0
             bg_at_corr = _find_bg_at_time(bg_by_date.get(date_label, []), corr["time"])
             y_val = bg_at_corr if bg_at_corr is not None else TARGET_HIGH
             fig.add_trace(go.Scatter(
@@ -395,16 +395,16 @@ def build_glucose_chart(bg_detailed, insulin_data, period_name):
 
 
 def build_summary_table(insulin_data):
-    days = insulin_data.get("days_data", [])
+    days = insulin_data.get("days_data") or []
     if not days:
         return ""
     rows = []
     for day in days:
         date = day["date"]
-        bg = day.get("bg_summary", {})
-        boluses = day.get("bolus_events", [])
-        total_carbs = sum(b.get("carb_input", 0) for b in boluses)
-        total_ins = sum(b.get("insulin_delivered", 0) for b in boluses)
+        bg = day.get("bg_summary") or {}
+        boluses = day.get("bolus_events") or []
+        total_carbs = sum(b.get("carb_input") or 0 for b in boluses)
+        total_ins = sum(b.get("insulin_delivered") or 0 for b in boluses)
         ic = boluses[0].get("ic_ratio", "") if boluses else ""
         start = bg.get("start_bg", "")
         finish = bg.get("finish_bg", "")
@@ -412,7 +412,7 @@ def build_summary_table(insulin_data):
         mx = bg.get("max_bg", "")
         hypo = bg.get("under_80_count", 0)
         hyper = bg.get("over_200_count", 0)
-        n_corr = len(day.get("correction_boluses", []))
+        n_corr = len(day.get("correction_boluses") or [])
 
         hypo_cls = ' class="warn"' if hypo > 0 else ' class="ok"'
         hyper_cls = ' class="warn"' if hyper > 0 else ' class="ok"'
