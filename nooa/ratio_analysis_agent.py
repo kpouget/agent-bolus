@@ -397,7 +397,7 @@ class RatioAnalysisAgent(DiabetesAgent):
         return bg_filepath
 
     @summary_log_method()
-    def save_llm_analysis(self, period_name: str, llm_analysis: str, output_dir: str = "output", processing_duration: float = None, period_data: Dict[str, Any] = None) -> str:
+    def save_llm_analysis(self, period_name: str, llm_analysis: str, output_dir: str = "output", processing_duration: float = None, period_data: Dict[str, Any] = None, latest_sensor_info: str = None) -> str:
         """
         Save LLM analysis results to output directory.
 
@@ -423,11 +423,11 @@ class RatioAnalysisAgent(DiabetesAgent):
         if processing_duration is not None:
             duration_info = f"**Durée d'exécution:** {processing_duration:.1f} secondes\n"
 
-        # Get latest sensor timestamp from the period data
-        if period_data:
-            latest_sensor_info = self.get_latest_sensor_timestamp(period_data)
-        else:
-            latest_sensor_info = "**Dernière glycémie capteur:** Non disponible"
+        if not latest_sensor_info:
+            if period_data:
+                latest_sensor_info = self.get_latest_sensor_timestamp(period_data)
+            else:
+                latest_sensor_info = "**Dernière glycémie capteur:** Non disponible"
 
         content = f"""# Analyse du Ratio I:C - {period_name}
 
@@ -544,6 +544,28 @@ class RatioAnalysisAgent(DiabetesAgent):
         else:
             return "**Dernière glycémie capteur:** Non disponible"
 
+    def get_latest_data_timestamp(self, filepath: str) -> str:
+        """Get the latest sensor glucose timestamp from the entire data file."""
+        readings = self.parser.parse_carelink_csv(filepath, days_back=30)
+        sensor_readings = [r for r in readings if r.type == "sensor"]
+        if not sensor_readings:
+            return "**Dernière glycémie capteur:** Non disponible"
+
+        latest = max(sensor_readings, key=lambda r: r.timestamp)
+        try:
+            ts = datetime.strptime(latest.timestamp, "%Y/%m/%d %H:%M:%S")
+            delta = datetime.now() - ts
+            total_hours = int(delta.total_seconds() // 3600)
+            if total_hours < 1:
+                delta_str = f"il y a {int(delta.total_seconds() // 60)}min"
+            elif total_hours < 48:
+                delta_str = f"il y a {total_hours}h"
+            else:
+                delta_str = f"il y a {total_hours // 24}j"
+            return f"**Dernière glycémie capteur:** {latest.timestamp} ({delta_str})"
+        except ValueError:
+            return f"**Dernière glycémie capteur:** {latest.timestamp}"
+
     def extract_conclusion_from_analysis(self, llm_analysis: str) -> str:
         """
         Extract the conclusion section from LLM analysis.
@@ -598,7 +620,7 @@ class RatioAnalysisAgent(DiabetesAgent):
         return conclusion
 
     @summary_log_method()
-    def save_conclusion(self, period_name: str, conclusion_text: str, output_dir: str = "output", period_data: Dict[str, Any] = None) -> str:
+    def save_conclusion(self, period_name: str, conclusion_text: str, output_dir: str = "output", period_data: Dict[str, Any] = None, latest_sensor_info: str = None) -> str:
         """
         Save period conclusion to a dedicated file.
 
@@ -618,11 +640,11 @@ class RatioAnalysisAgent(DiabetesAgent):
         filename = "conclusion.md"
         filepath = os.path.join(period_dir, filename)
 
-        # Get latest sensor timestamp
-        if period_data:
-            latest_sensor_info = self.get_latest_sensor_timestamp(period_data)
-        else:
-            latest_sensor_info = "**Dernière glycémie capteur:** Non disponible"
+        if not latest_sensor_info:
+            if period_data:
+                latest_sensor_info = self.get_latest_sensor_timestamp(period_data)
+            else:
+                latest_sensor_info = "**Dernière glycémie capteur:** Non disponible"
 
         # Save conclusion with metadata
         content = f"""# Conclusion - {period_name}
@@ -784,6 +806,10 @@ class RatioAnalysisAgent(DiabetesAgent):
                 raise ValueError(f"No valid periods found in {target_periods}")
         else:
             periods = all_periods
+
+        latest_sensor_info = self.get_latest_data_timestamp(filepath)
+        print(f"📡 {latest_sensor_info}")
+
         results = {
             "analysis_timestamp": datetime.now().isoformat(),
             "periods_analyzed": [],
@@ -836,12 +862,12 @@ class RatioAnalysisAgent(DiabetesAgent):
 
                 if llm_analysis and len(str(llm_analysis).strip()) > 50:
                     # Save LLM analysis in French with processing duration
-                    analysis_file = self.save_llm_analysis(period_name, llm_analysis, output_dir, processing_duration=llm_duration, period_data=period_data)
+                    analysis_file = self.save_llm_analysis(period_name, llm_analysis, output_dir, processing_duration=llm_duration, period_data=period_data, latest_sensor_info=latest_sensor_info)
                     print(f"   📝 Analyse sauvegardée: {os.path.basename(analysis_file)} (durée: {llm_duration:.1f}s)")
 
                     # Extract and save conclusion
                     conclusion_text = self.extract_conclusion_from_analysis(llm_analysis)
-                    conclusion_file = self.save_conclusion(period_name, conclusion_text, output_dir, period_data=period_data)
+                    conclusion_file = self.save_conclusion(period_name, conclusion_text, output_dir, period_data=period_data, latest_sensor_info=latest_sensor_info)
                     print(f"   📄 Conclusion sauvegardée: {os.path.basename(conclusion_file)}")
 
                     results["saved_files"].extend([data_file, plot_file, bg_file, analysis_file, conclusion_file])
