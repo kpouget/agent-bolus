@@ -1357,7 +1357,11 @@ class RatioAnalysisAgent(DiabetesAgent):
         3. Justification clinique
         4. Considérations de sécurité
 
-        Terminez votre analyse par une section "## Conclusion" avec vos recommandations principales.
+        Terminez votre analyse par une section "## Conclusion" avec:
+        - Votre recommandation principale (ajustement ou maintien du ratio I:C)
+        - Une section "Pour les prochains jours:" indiquant brièvement ce que l'agent devra surveiller lors des prochaines analyses (ex: confirmer un pattern, surveiller les hypos, etc.)
+
+        IMPORTANT: Ce rapport est généré automatiquement chaque jour et l'utilisateur ajuste manuellement les paramètres si nécessaire. Ne fournissez PAS de plan d'action détaillé avec des étapes numérotées. Restez concis et orienté vers la surveillance.
 
         Utilisez les données d'analyse fournies et le contexte historique pour votre analyse.
 
