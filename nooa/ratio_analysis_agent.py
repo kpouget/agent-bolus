@@ -531,12 +531,12 @@ class RatioAnalysisAgent(DiabetesAgent):
                     total_hours = int(delta.total_seconds() // 3600)
                     if total_hours < 1:
                         minutes = int(delta.total_seconds() // 60)
-                        delta_str = f"il y a {minutes}min"
+                        delta_str = f"{minutes}min avant"
                     elif total_hours < 48:
-                        delta_str = f"il y a {total_hours}h"
+                        delta_str = f"{total_hours}h avant"
                     else:
                         days = total_hours // 24
-                        delta_str = f"il y a {days}j"
+                        delta_str = f"{days}j avant"
                     return f"**Dernière glycémie capteur:** {latest_timestamp} ({delta_str})"
             except Exception:
                 pass
@@ -557,11 +557,11 @@ class RatioAnalysisAgent(DiabetesAgent):
             delta = datetime.now() - ts
             total_hours = int(delta.total_seconds() // 3600)
             if total_hours < 1:
-                delta_str = f"il y a {int(delta.total_seconds() // 60)}min"
+                delta_str = f"{int(delta.total_seconds() // 60)}min avant"
             elif total_hours < 48:
-                delta_str = f"il y a {total_hours}h"
+                delta_str = f"{total_hours}h avant"
             else:
-                delta_str = f"il y a {total_hours // 24}j"
+                delta_str = f"{total_hours // 24}j avant"
             return f"**Dernière glycémie capteur:** {latest.timestamp} ({delta_str})"
         except ValueError:
             return f"**Dernière glycémie capteur:** {latest.timestamp}"
